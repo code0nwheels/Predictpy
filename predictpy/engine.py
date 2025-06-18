@@ -98,11 +98,24 @@ class WordPredictionEngine:
         # Automatically learn from selection if enabled
         if learn and selected_index >= 0 and selected_index < len(final_predictions):
             selected_word = final_predictions[selected_index]
-            self.record_selection(context_words, selected_word)
+            self.learn(context_words, selected_word)
             
         return final_predictions
+
+    def get_sentence_starters(self, count: int = 10, partial_word: str = "") -> List[str]:
+        """
+        Get a list of common sentence starter words.
+        
+        Args:
+            count: Number of starter words to return.
+            partial_word: Optional partial word to filter starters.
+        
+        Returns:
+            List of common sentence starter words.
+        """
+        return self.predictor.get_sentence_starters(count, partial_word)
     
-    def record_selection(self, context_words: List[str], selected_word: str):
+    def learn(self, context_words: List[str], selected_word: str):
         """
         Record user word selection to improve future predictions.
         

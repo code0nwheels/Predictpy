@@ -98,6 +98,19 @@ class Predictpy:
         
         return self.engine.predict(context, partial, count)
     
+    def get_sentence_starters(self, count: int = 10, partial_word: str = "") -> List[str]:
+        """
+        Get a list of common sentence starter words.
+        
+        Args:
+            count: Number of starter words to return.
+            partial_word: Optional partial word to filter starters.
+        
+        Returns:
+            List of common sentence starter words.
+        """
+        return self.engine.get_sentence_starters(count, partial_word)
+    
     def select(self, 
                context: Union[str, List[str]], 
                word: str,

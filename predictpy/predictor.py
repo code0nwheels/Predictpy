@@ -100,6 +100,38 @@ class WordPredictor:
 		conn.commit()
 		return conn
 
+	def get_sentence_starters(self, count: int = 10, partial_word: str = "") -> List[str]:
+		"""
+		Get a list of common sentence starter words.
+		
+		Args:
+			count: Number of starter words to return.
+			partial_word: Optional partial word to filter starters.
+		
+		Returns:
+			List of common sentence starter words.
+		"""
+		c = self.conn.cursor()
+		
+		if partial_word:
+			query = """
+				SELECT word FROM words 
+				WHERE is_starter = 1 AND word LIKE ?
+				ORDER BY frequency DESC
+				LIMIT ?
+			"""
+			c.execute(query, (f"{partial_word}%", count))
+		else:
+			query = """
+				SELECT word FROM words 
+				WHERE is_starter = 1
+				ORDER BY frequency DESC
+				LIMIT ?
+			"""
+			c.execute(query, (count,))
+			
+		return [row['word'] for row in c.fetchall()]
+
 	def _train_model(self, target_sentences: int = 10000):
 		"""Train the language model using DailyDialog dataset.
 		
@@ -216,218 +248,19 @@ class WordPredictor:
 		
 		conn.commit()
 		conn.close()
-		
-		logging.info("Training complete!")
-	
-	def _collect_sentences(self, target_sentences: int) -> List[str]:
-		"""Collect sentences from DailyDialog dataset.
+
+	def predict(self, context_words: List[str], partial_word: str = "", max_suggestions: int = 10) -> Tuple[List[str], Dict[str, Any]]:
+		"""
+		Predict next words based on context and partial word input.
 		
 		Args:
-			target_sentences: Maximum number of sentences to collect
+			context_words: List of words providing context.
+			partial_word: Partially typed word to be completed.
+			max_suggestions: Maximum number of suggestions to return.
 			
 		Returns:
-			List of sentences
+			A tuple containing:
+			- A list of suggested words.
+			- A dictionary with debug information.
 		"""
-		logging.info(f"Loading DailyDialog dataset (targeting {target_sentences} sentences)...")
-		dataset = load_dataset("daily_dialog", "default", trust_remote_code=True)
-		
-		all_sentences = []
-		for split_name in dataset.keys():
-			split_dataset = dataset[split_name]
-			for conversation in split_dataset:
-				dialogue_turns = conversation.get('dialog', [])
-				all_sentences.extend(dialogue_turns)
-				if len(all_sentences) >= target_sentences:
-					return all_sentences[:target_sentences]
-		
-		return all_sentences
-	def predict(self, context_words: List[str], partial_word: str = "", max_suggestions: int = 5) -> Tuple[List[str], str]:
-		"""Predict next word based on context.
-		
-		Args:
-			context_words: List of previous words as context
-			partial_word: Partially typed word to complete
-			max_suggestions: Maximum number of suggestions to return
-			
-		Returns:
-			Tuple of (list of predicted words, method used)
-		"""
-		# Initialize variables
-		final_words = []
-		seen_words = set()
-		methods_used = []
-		
-		# 1. Try trigrams (if we have 2+ context words)
-		if len(context_words) >= 2:
-			context = f"{context_words[-2]} {context_words[-1]}"
-			trigram_results = self._get_ngram_predictions('trigram', context, partial_word)
-			if trigram_results:
-				methods_used.append("Trigram")
-				# Sort by frequency in descending order
-				trigram_results.sort(key=lambda x: -x[1])
-				for word, freq in trigram_results:
-					if word not in seen_words and len(final_words) < max_suggestions:
-						final_words.append(word)
-						seen_words.add(word)
-				# 2. Try bigrams (if we have 1+ context words) to fill remaining spots
-		if len(final_words) < max_suggestions and len(context_words) >= 1:
-			context = context_words[-1]
-			bigram_results = self._get_ngram_predictions('bigram', context, partial_word)
-			if bigram_results:
-				methods_used.append("Bigram")
-				# Sort by frequency in descending order
-				bigram_results.sort(key=lambda x: -x[1])
-				for word, freq in bigram_results:
-					if word not in seen_words and len(final_words) < max_suggestions:
-						final_words.append(word)
-						seen_words.add(word)
-				# 3. If no context or more suggestions needed, use starter words
-		if len(final_words) < max_suggestions and not context_words and partial_word:
-			starter_results = self._get_starter_words(partial_word)
-			if starter_results:
-				methods_used.append("Starter")
-				# Sort by frequency in descending order
-				starter_results.sort(key=lambda x: -x[1])
-				for word, freq in starter_results:
-					if word not in seen_words and len(final_words) < max_suggestions:
-						final_words.append(word)
-						seen_words.add(word)
-		
-		# 4. Fallback to unigram search if still needed
-		if len(final_words) < max_suggestions and partial_word:
-			unigram_results = self._get_unigram_predictions(partial_word)
-			if unigram_results:
-				methods_used.append("Unigram")
-				# Sort by frequency in descending order
-				unigram_results.sort(key=lambda x: -x[1])
-				for word, freq in unigram_results:
-					if word not in seen_words and len(final_words) < max_suggestions:
-						final_words.append(word)
-						seen_words.add(word)
-		
-		method_str = ", ".join(methods_used) if methods_used else "None"
-		return final_words, method_str
-	
-	def _get_ngram_predictions(self, ngram_type: str, context: str, partial_word: str) -> List[Tuple[str, int]]:
-		"""Get predictions from n-gram table.
-		
-		Args:
-			ngram_type: 'bigram' or 'trigram'
-			context: Context words
-			partial_word: Partially typed word
-			
-		Returns:
-			List of (word, frequency) tuples
-		"""
-		c = self.conn.cursor()
-		
-		if partial_word:
-			query = """
-				SELECT word, frequency 
-				FROM ngrams 
-				WHERE type = ? AND context = ? AND first_letter = ?
-				ORDER BY frequency DESC
-				LIMIT 20
-			"""
-			results = c.execute(query, (ngram_type, context, partial_word[0])).fetchall()
-			# Further filter by partial match
-			return [(r['word'], r['frequency']) for r in results 
-					if r['word'].startswith(partial_word)]
-		else:
-			query = """
-				SELECT word, frequency 
-				FROM ngrams 
-				WHERE type = ? AND context = ?
-				ORDER BY frequency DESC
-				LIMIT 10
-			"""
-			results = c.execute(query, (ngram_type, context)).fetchall()
-			return [(r['word'], r['frequency']) for r in results]
-	
-	def _get_starter_words(self, partial_word: str) -> List[Tuple[str, int]]:
-		"""Get words that commonly start sentences.
-		
-		Args:
-			partial_word: Partially typed word
-			
-		Returns:
-			List of (word, frequency) tuples
-		"""
-		c = self.conn.cursor()
-		
-		# Build query based on partial length
-		if len(partial_word) >= 3:
-			query = """
-				SELECT word, frequency 
-				FROM words 
-				WHERE is_starter = 1 AND first_three = ?
-				ORDER BY frequency DESC
-				LIMIT 20
-			"""
-			results = c.execute(query, (partial_word[:3],)).fetchall()
-		elif len(partial_word) >= 2:
-			query = """
-				SELECT word, frequency 
-				FROM words 
-				WHERE is_starter = 1 AND first_two = ?
-				ORDER BY frequency DESC
-				LIMIT 20
-			"""
-			results = c.execute(query, (partial_word[:2],)).fetchall()
-		else:
-			query = """
-				SELECT word, frequency 
-				FROM words 
-				WHERE is_starter = 1 AND first_letter = ?
-				ORDER BY frequency DESC
-				LIMIT 20
-			"""
-			results = c.execute(query, (partial_word[0],)).fetchall()
-		
-		# Further filter by exact prefix match
-		return [(r['word'], r['frequency']) for r in results 
-				if r['word'].startswith(partial_word)]
-	
-	def _get_unigram_predictions(self, partial_word: str) -> List[Tuple[str, int]]:
-		"""Get words by prefix matching.
-		
-		Args:
-			partial_word: Partially typed word
-			
-		Returns:
-			List of (word, frequency) tuples
-		"""
-		c = self.conn.cursor()
-		
-		# Use the most specific prefix available
-		if len(partial_word) >= 3:
-			query = """
-				SELECT word, frequency 
-				FROM words 
-				WHERE first_three = ?
-				ORDER BY frequency DESC
-				LIMIT 30
-			"""
-			results = c.execute(query, (partial_word[:3],)).fetchall()
-		elif len(partial_word) >= 2:
-			query = """
-				SELECT word, frequency 
-				FROM words 
-				WHERE first_two = ?
-				ORDER BY frequency DESC
-				LIMIT 30
-			"""
-			results = c.execute(query, (partial_word[:2],)).fetchall()
-		else:
-			query = """
-				SELECT word, frequency 
-				FROM words 
-				WHERE first_letter = ?
-				ORDER BY frequency DESC
-				LIMIT 30
-			"""
-			results = c.execute(query, (partial_word[0],)).fetchall()
-		
-		# Further filter by exact prefix match
-		return [(r['word'], r['frequency']) for r in results 
-				if r['word'].startswith(partial_word)]
+		# ... existing code ...

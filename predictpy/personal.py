@@ -111,6 +111,43 @@ class PersonalModel:
         # Return with boosted frequency (multiply by 1000 to ensure priority)
         return [(r['selected_word'], r['count'] * 1000) for r in results]
     
+    def get_personal_sentence_starters(self, partial_word: str = "") -> List[Tuple[str, int]]:
+        """
+        Get sentence starters based on personal history.
+        
+        Args:
+            partial_word: Partially typed word to complete
+            
+        Returns:
+            List of (word, score) tuples.
+        """
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        
+        context = 'START'
+        
+        if partial_word:
+            results = c.execute("""
+                SELECT selected_word, count FROM personal_selections 
+                WHERE context = ? AND selected_word LIKE ?
+                ORDER BY count DESC
+                LIMIT 10
+            """, (context, partial_word + '%')).fetchall()
+        else:
+            results = c.execute("""
+                SELECT selected_word, count 
+                FROM personal_selections 
+                WHERE context = ?
+                ORDER BY count DESC
+                LIMIT 10
+            """, (context,)).fetchall()
+        
+        conn.close()
+        
+        # Return with high score to ensure priority
+        return [(r['selected_word'], r['count'] * 1000) for r in results]
+    
     def get_boost_factor(self, context_words: List[str], word: str) -> int:
         """
         Get frequency boost for a word in context.
