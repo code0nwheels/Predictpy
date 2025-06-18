@@ -3,6 +3,7 @@
     ".": {
       "release-type": "python",
       "package-name": "predictpy",
+      "version_file": "predictpy/__init__.py",
       "draft": false,
       "prerelease": false
     }
