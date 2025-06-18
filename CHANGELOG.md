@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/code0nwheels/Predictpy/compare/v0.3.1...v0.4.0) (2025-06-18)
+
+
+### Features
+
+* **api:** add get_sentence_starters method ([b836968](https://github.com/code0nwheels/Predictpy/commit/b836968e1a31ec7ea7233eb6ce9ad0d377611e40))
+
 ## [0.3.1](https://github.com/code0nwheels/Predictpy/compare/v0.3.0...v0.3.1) (2025-06-18)
 
 
