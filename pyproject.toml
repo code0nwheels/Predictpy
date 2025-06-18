@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "Predictpy"
+dynamic = ["version"]
+description = "A smart predictive text system with personal learning"
+readme = "README.md"
+requires-python = ">=3.7"
+license = {text = "MIT"}
+authors = [
+    {name = "code0nwheels"},
+]
+keywords = ["prediction", "text", "nlp", "word", "language", "personal", "learning"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Text Processing :: Linguistic",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence"
+]
+dependencies = [
+    "nltk>=3.6.0",
+    "datasets>=2.0.0",
+    "chromadb>=0.4.0",
+    "sentence-transformers>=2.2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/code0nwheels/Predictpy"
+Repository = "https://github.com/code0nwheels/Predictpy"
+"Bug Reports" = "https://github.com/code0nwheels/Predictpy/issues"
+
+[project.scripts]
+Predictpy = "predictpy.engine:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "predictpy.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["predictpy*"]
+
+[tool.setuptools.package-data]
+predictpy = [
+    "data/*.json",
+    "models/*.pkl"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0.0",
+    "pytest-cov>=2.0.0",
+]
