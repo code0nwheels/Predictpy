@@ -2,7 +2,7 @@
   "packages": {
     ".": {
       "release-type": "python",
-      "package-name": "dwellpy",
+      "package-name": "predictpy",
       "draft": false,
       "prerelease": false
     }
