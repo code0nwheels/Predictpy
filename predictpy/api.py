@@ -4,10 +4,22 @@ Enhanced API for Predictpy - Simplified integration interface
 from typing import List, Dict, Any, Optional, Union, Callable
 from .engine import WordPredictionEngine
 from .semantic import SemanticMemory
-from predictpy import __version__
 import json
 import os
 import logging
+
+def _get_version():
+    """Get version without circular import."""
+    try:
+        # Try to read from __init__.py to get the actual version
+        init_file = os.path.join(os.path.dirname(__file__), '__init__.py')
+        with open(init_file, 'r') as f:
+            for line in f:
+                if line.startswith('__version__'):
+                    return line.split('=')[1].strip().strip('"\'')
+    except Exception:
+        pass
+    return "0.3.0"  # fallback version
 
 class Predictpy:
     """
@@ -193,7 +205,7 @@ class Predictpy:
         except Exception as e:
             logging.error(f"Failed to predict completion: {e}")
             return []
-    
+        
     def reset_personal_data(self):
         """Clear all personal learning data."""
         conn = self.engine.predictor.conn
@@ -205,7 +217,7 @@ class Predictpy:
         """Export current configuration."""
         config = {
             'db_path': self.engine.predictor.db_path,
-            'version': __version__
+            'version': _get_version()
         }
         with open(path, 'w') as f:
             json.dump(config, f, indent=2)
