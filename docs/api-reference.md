@@ -72,6 +72,33 @@ predictor.predict("Thank you for your ")  # ['help', 'email', 'time', 'support']
 
 ---
 
+### get_sentence_starters()
+
+```python
+get_sentence_starters(count=10, partial_word="") -> List[str]
+```
+
+Get a list of common sentence starter words.
+
+**Parameters:**
+- `count` *(int)*: Number of starter words to return (default: 10)
+- `partial_word` *(str, optional)*: Optional partial word to filter starters
+
+**Returns:** List of common sentence starter words
+
+**Examples:**
+```python
+# Get top 5 sentence starters
+starters = predictor.get_sentence_starters(count=5)
+# ['the', 'i', 'it', 'we', 'what']
+
+# Filter starters with a partial word
+starters = predictor.get_sentence_starters(partial_word="th")
+# ['the', 'this', 'that', 'they', 'there']
+```
+
+---
+
 ### select()
 
 ```python
