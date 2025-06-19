@@ -40,16 +40,19 @@ class WordPredictor:
 			os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
 		else:
 			self.db_path = db_path
-		
-		# Check if database exists and train if necessary		if not os.path.exists(self.db_path):
+		# Check if database exists and train if necessary
+		if not os.path.exists(self.db_path):
 			if auto_train:
 				logging.info(f"Database not found at {self.db_path}, training model...")
 				self._setup_spacy()
 				self._train_model(target_sentences)
+				# Connection is created in _train_model now
 			else:
 				raise FileNotFoundError(f"Database not found at {self.db_path} and auto_train is disabled.")
-		# Connect to database		self.conn = sqlite3.connect(self.db_path)
-		self.conn.row_factory = sqlite3.Row
+		else:
+			# Database exists, just connect to it
+			self.conn = sqlite3.connect(self.db_path)
+			self.conn.row_factory = sqlite3.Row
 		logging.info(f"Word predictor initialized with database: {self.db_path}")
 		
 	def _setup_spacy(self):
@@ -141,20 +144,17 @@ class WordPredictor:
 			target_sentences: Number of sentences to use for training
 		"""
 		logging.info(f"Starting model training with {target_sentences} sentences...")
-				# Setup SpaCy
-		self._setup_spacy()
 		
+		# Setup SpaCy
+		self._setup_spacy()
+
 		# Load English dictionary using SpaCy
 		logging.info("Loading English dictionary from SpaCy...")
-		english_words = {word.lower() for word in self.nlp.vocab.string}
-		
-		# Remove fragments
-		english_words -= {'don', 't', 's'}
+		english_words = {word.lower() for word in self.nlp.vocab.strings}
 		logging.info(f"SpaCy dictionary loaded with {len(english_words)} words")
-		
-		# Create database
-		conn = self._create_database()
-		c = conn.cursor()
+				# Create database
+		self.conn = self._create_database()
+		c = self.conn.cursor()
 		
 		# Collect sentences
 		sentences = self._collect_sentences(target_sentences)
@@ -221,8 +221,7 @@ class WordPredictor:
 		
 		c.executemany("INSERT INTO ngrams (type, context, word, frequency, first_letter) VALUES (?, ?, ?, ?, ?)", bigram_data)
 		logging.info(f"Inserted {len(bigram_data)} bigrams")
-		
-		# Insert trigrams
+				# Insert trigrams
 		logging.info("Inserting trigrams...")
 		trigram_data = []
 		for (context, word), count in trigram_counts.most_common():
@@ -233,8 +232,50 @@ class WordPredictor:
 		c.executemany("INSERT INTO ngrams (type, context, word, frequency, first_letter) VALUES (?, ?, ?, ?, ?)", trigram_data)
 		logging.info(f"Inserted {len(trigram_data)} trigrams")
 		
-		conn.commit()
-		conn.close()
+		self.conn.commit()
+		# Don't close self.conn as it will be used later
+
+	def _collect_sentences(self, target_sentences: int = 10000) -> List[str]:
+		"""
+		Collect sentences for training the language model.
+		
+		Args:
+			target_sentences: Number of sentences to collect
+			
+		Returns:
+			List of sentences for training
+		"""
+		logging.info(f"Collecting {target_sentences} sentences for training...")
+		
+		try:
+			# Load DailyDialog dataset which is good for conversational text
+			dataset = load_dataset("daily_dialog", split="train")
+			
+			# Collect unique sentences
+			sentences = []
+			for dialog in dataset["dialog"]:
+				for utterance in dialog:
+					# Split utterance into sentences
+					for sentence in re.split(r'(?<=[.!?])\s+', utterance):
+						if sentence and len(sentence.split()) >= 2:
+							sentences.append(sentence)
+							if len(sentences) >= target_sentences:
+								return sentences
+			
+			# If we don't have enough sentences, return what we have
+			logging.warning(f"Only collected {len(sentences)} sentences (requested {target_sentences})")
+			return sentences
+			
+		except Exception as e:
+			logging.error(f"Error collecting sentences: {e}")
+			# Fallback to a small set of example sentences
+			return [
+				"The quick brown fox jumps over the lazy dog",
+				"Hello, how are you doing today?",
+				"I would like to talk about this project",
+				"Python is a great programming language",
+				"Machine learning models can predict text"
+			]
 
 	def predict(self, context_words: List[str], partial_word: str = "", max_suggestions: int = 10) -> Tuple[List[str], Dict[str, Any]]:
 		"""
