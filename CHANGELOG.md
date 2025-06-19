@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/code0nwheels/Predictpy/compare/v0.5.1...v0.5.2) (2025-06-19)
+
+
+### Bug Fixes
+
+* more fixes ([cd2dfa7](https://github.com/code0nwheels/Predictpy/commit/cd2dfa729c00bd1d323c50855a145c256835beb9))
+
 ## [0.5.1](https://github.com/code0nwheels/Predictpy/compare/v0.5.0...v0.5.1) (2025-06-19)
 
 
