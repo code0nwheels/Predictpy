@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/code0nwheels/Predictpy/compare/v0.5.0...v0.5.1) (2025-06-19)
+
+
+### Bug Fixes
+
+* remove nltk ([88170af](https://github.com/code0nwheels/Predictpy/commit/88170af06071a1e8af2046ae55fb9c943da4e5e1))
+
 ## [0.5.0](https://github.com/code0nwheels/Predictpy/compare/v0.4.1...v0.5.0) (2025-06-19)
 
 
