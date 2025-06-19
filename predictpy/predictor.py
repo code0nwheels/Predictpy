@@ -71,6 +71,7 @@ class WordPredictor:
 	def _create_database(self):
 		"""Create SQLite database with proper tables and indexes."""
 		conn = sqlite3.connect(self.db_path)
+		conn.row_factory = sqlite3.Row
 		c = conn.cursor()
 		
 		# Drop existing tables
@@ -104,6 +105,35 @@ class WordPredictor:
 		
 		conn.commit()
 		return conn
+
+	def _import_spacy_vocabulary(self):
+		"""Import all words from SpaCy vocabulary into database."""
+		c = self.conn.cursor()
+		
+		logging.info("Importing full SpaCy vocabulary...")
+		imported = 0
+		
+		for word in self.nlp.vocab.strings:
+			word_lower = word.lower()
+			
+			# Skip non-alphabetic strings and very short words
+			if len(word_lower) > 1 and word_lower.isalpha():
+				try:
+					c.execute("""INSERT OR IGNORE INTO words 
+							   VALUES (?, ?, ?, ?, ?, ?)""",
+							 (word_lower, 
+							  1,  # Default frequency
+							  False,  # Not a sentence starter
+							  word_lower[0],
+							  word_lower[:2] if len(word_lower) >= 2 else None,
+							  word_lower[:3] if len(word_lower) >= 3 else None))
+					imported += c.rowcount
+				except Exception as e:
+					pass
+		
+		self.conn.commit()
+		logging.info(f"Imported {imported} words from SpaCy vocabulary")
+		return imported
 
 	def get_sentence_starters(self, count: int = 10, partial_word: str = "") -> List[str]:
 		"""
@@ -154,6 +184,7 @@ class WordPredictor:
 		logging.info(f"SpaCy dictionary loaded with {len(english_words)} words")
 				# Create database
 		self.conn = self._create_database()
+		self._import_spacy_vocabulary()
 		c = self.conn.cursor()
 		
 		# Collect sentences
@@ -198,8 +229,6 @@ class WordPredictor:
 		logging.info("Inserting words into database...")
 		word_data = []
 		for word, count in word_counts.most_common():
-			if count < 3:
-				break
 			
 			is_starter = starter_counts.get(word, 0) / count > 0.1
 			first_letter = word[0]
@@ -208,7 +237,7 @@ class WordPredictor:
 			
 			word_data.append((word, count, is_starter, first_letter, first_two, first_three))
 		
-		c.executemany("INSERT INTO words VALUES (?, ?, ?, ?, ?, ?)", word_data)
+		c.executemany("INSERT OR REPLACE INTO words VALUES (?, ?, ?, ?, ?, ?)", word_data)
 		logging.info(f"Inserted {len(word_data)} words")
 		
 		# Insert bigrams

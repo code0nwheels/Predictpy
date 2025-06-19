@@ -55,9 +55,9 @@ class Predictpy:
         
         # Map training sizes
         size_map = {
-            "small": 1000,
-            "medium": 10000,
-            "large": 50000
+            "small": 100000,
+            "medium": 1000000,
+            "large": 5000000
         }
         target_sentences = size_map.get(training_size, 10000)
         
@@ -98,6 +98,15 @@ class Predictpy:
         
         return self.engine.predict(context, partial, count)
     
+    def get_vocab_count(self) -> int:
+        """
+        Get the total number of unique words in the vocabulary.
+
+        Returns:
+            The total number of unique words.
+        """
+        return self.engine.get_vocab_count()
+
     def get_sentence_starters(self, count: int = 10, partial_word: str = "") -> List[str]:
         """
         Get a list of common sentence starter words.

@@ -30,9 +30,13 @@ def clear_screen():
 def main():
     """Interactive word prediction example with keystroke-based predictions."""    # Initialize the engine (will train automatically if needed)
     print("Initializing Predictpy...")
-    engine = WordPredictionEngine(auto_train=True, target_sentences=5000)
+    engine = WordPredictionEngine(auto_train=True, target_sentences=5000000)
     clear_screen()
     print("Initialization complete.")
+
+    # Get and print vocab count
+    vocab_count = engine.get_vocab_count()
+    print(f"Vocabulary size: {vocab_count} unique words")
     
     # Number of suggestions to show (can be customized)
     num_suggestions = 8  # Change this value to get more or fewer suggestions

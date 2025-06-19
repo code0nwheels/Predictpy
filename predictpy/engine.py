@@ -147,6 +147,18 @@ class WordPredictionEngine:
         """
         return self.personal_model.view_personal_data(limit)
     
+    def get_vocab_count(self) -> int:
+        """
+        Get the total number of unique words in the vocabulary.
+
+        Returns:
+            The total number of unique words.
+        """
+        cursor = self.predictor.conn.cursor()
+        query = "SELECT COUNT(*) FROM words"
+        result = cursor.execute(query).fetchone()
+        return result[0] if result else 0
+
     def _get_top_words(self, partial_word: str = "", limit: int = 8) -> List[str]:
         """
         Get the most frequent words from the database that match the partial word.
