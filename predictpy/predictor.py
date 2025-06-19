@@ -41,24 +41,17 @@ class WordPredictor:
 		else:
 			self.db_path = db_path
 		
-		# Check if database exists and train if necessary
-		if not os.path.exists(self.db_path):
+		# Check if database exists and train if necessary		if not os.path.exists(self.db_path):
 			if auto_train:
 				logging.info(f"Database not found at {self.db_path}, training model...")
-				self._setup_nltk()
+				self._setup_spacy()
 				self._train_model(target_sentences)
 			else:
 				raise FileNotFoundError(f"Database not found at {self.db_path} and auto_train is disabled.")
-		# Connect to database
-		self.conn = sqlite3.connect(self.db_path)
+		# Connect to database		self.conn = sqlite3.connect(self.db_path)
 		self.conn.row_factory = sqlite3.Row
 		logging.info(f"Word predictor initialized with database: {self.db_path}")
 		
-	def _setup_nltk(self):
-		"""Set up language processing (using SpaCy instead of NLTK)."""
-		# For backward compatibility, this method is kept but now uses SpaCy
-		self._setup_spacy()
-	
 	def _setup_spacy(self):
 		"""Load SpaCy model for vocabulary access."""
 		try:
