@@ -263,4 +263,59 @@ class WordPredictor:
 			- A list of suggested words.
 			- A dictionary with debug information.
 		"""
-		# ... existing code ...
+		c = self.conn.cursor()
+		suggestions = Counter()
+		debug_info = {'trigram_hits': 0, 'bigram_hits': 0, 'unigram_hits': 0}
+
+		# 1. Trigram search
+		if len(context_words) >= 2:
+			trigram_context = f"{context_words[-2]} {context_words[-1]}"
+			query = "SELECT word, frequency FROM ngrams WHERE type = 'trigram' AND context = ?"
+			params: List[Union[str, int]] = [trigram_context]
+			if partial_word:
+				query += " AND word LIKE ?"
+				params.append(f"{partial_word}%")
+			query += " ORDER BY frequency DESC LIMIT ?"
+			params.append(max_suggestions)
+			
+			c.execute(query, params)
+			for row in c.fetchall():
+				suggestions[row['word']] += row['frequency']
+				debug_info['trigram_hits'] += 1
+
+		# 2. Bigram search
+		if len(suggestions) < max_suggestions and len(context_words) >= 1:
+			bigram_context = context_words[-1]
+			query = "SELECT word, frequency FROM ngrams WHERE type = 'bigram' AND context = ?"
+			params = [bigram_context]
+			if partial_word:
+				query += " AND word LIKE ?"
+				params.append(f"{partial_word}%")
+			query += " ORDER BY frequency DESC LIMIT ?"
+			params.append(max_suggestions - len(suggestions))
+
+			c.execute(query, params)
+			for row in c.fetchall():
+				if row['word'] not in suggestions:
+					suggestions[row['word']] += row['frequency']
+					debug_info['bigram_hits'] += 1
+
+		# 3. Unigram (frequent words) search as fallback
+		if len(suggestions) < max_suggestions:
+			query = "SELECT word, frequency FROM words WHERE 1=1"
+			params = []
+			if partial_word:
+				query += " AND word LIKE ?"
+				params.append(f"{partial_word}%")
+			query += " ORDER BY frequency DESC LIMIT ?"
+			params.append(max_suggestions - len(suggestions))
+
+			c.execute(query, params)
+			for row in c.fetchall():
+				if row['word'] not in suggestions:
+					suggestions[row['word']] += row['frequency']
+					debug_info['unigram_hits'] += 1
+		
+		sorted_suggestions = [word for word, _ in suggestions.most_common(max_suggestions)]
+		
+		return sorted_suggestions, debug_info

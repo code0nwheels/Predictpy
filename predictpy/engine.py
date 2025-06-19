@@ -125,6 +125,16 @@ class WordPredictionEngine:
         """
         self.personal_model.record_selection(context_words, selected_word)
     
+    def record_selection(self, context_words: List[str], selected_word: str):
+        """
+        Record that user selected this word in this context.
+        
+        Args:
+            context_words: List of preceding words that form the context
+            selected_word: The word selected by the user
+        """
+        self.personal_model.record_selection(context_words, selected_word)
+    
     def view_personal_data(self, limit: int = 20) -> List[Dict[str, Any]]:
         """
         Get the personal data stored in the database.
