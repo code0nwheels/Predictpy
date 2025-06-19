@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/code0nwheels/Predictpy/compare/v0.4.0...v0.4.1) (2025-06-19)
+
+
+### Bug Fixes
+
+* **prediction:** resolve runtime errors in prediction engine ([8ae3e16](https://github.com/code0nwheels/Predictpy/commit/8ae3e16284209a205388405fbce460e5404a1e79))
+
 ## [0.4.0](https://github.com/code0nwheels/Predictpy/compare/v0.3.1...v0.4.0) (2025-06-18)
 
 
