@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/code0nwheels/Predictpy/compare/v0.5.2...v0.6.0) (2025-06-19)
+
+
+### Features
+
+* **predictor, api:** enhance vocabulary and increase training data ([0b35a61](https://github.com/code0nwheels/Predictpy/commit/0b35a61793f07c450694e71bdfe8d4a97c7e9d1c))
+
 ## [0.5.2](https://github.com/code0nwheels/Predictpy/compare/v0.5.1...v0.5.2) (2025-06-19)
 
 
