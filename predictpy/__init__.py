@@ -12,4 +12,4 @@ from .semantic import SemanticMemory
 
 __all__ = ["WordPredictor", "PersonalModel", "WordPredictionEngine", "Predictpy", "SemanticMemory"]
 
-__version__ = "0.4.1"
+__version__ = "0.5.0"
