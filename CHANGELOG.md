@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/code0nwheels/Predictpy/compare/v0.4.1...v0.5.0) (2025-06-19)
+
+
+### Features
+
+* **nlp:** replace NLTK with SpaCy for dictionary and tokenization ([b36d02c](https://github.com/code0nwheels/Predictpy/commit/b36d02c04879feb377ee4bd1e8e58a92117e1ea6))
+
 ## [0.4.1](https://github.com/code0nwheels/Predictpy/compare/v0.4.0...v0.4.1) (2025-06-19)
 
 
