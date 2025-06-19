@@ -25,7 +25,7 @@ def clear_line():
     
 def clear_screen():
     """Clear the terminal screen."""
-    os.system('cls')
+    os.system('clear' if os.name == 'posix' else 'cls')
 
 def main():
     """Interactive word prediction example with keystroke-based predictions."""    # Initialize the engine (will train automatically if needed)

@@ -3,7 +3,6 @@ Enhanced API for Predictpy - Simplified integration interface
 """
 from typing import List, Dict, Any, Optional, Union, Callable
 from .engine import WordPredictionEngine
-from .semantic import SemanticMemory
 import json
 import os
 import logging
@@ -19,7 +18,15 @@ def _get_version():
                     return line.split('=')[1].strip().strip('"\'')
     except Exception:
         pass
-    return "0.3.0"  # fallback version
+    return "0.6.0"  # Update fallback to match your current version
+
+LOW_MEMORY_CONFIG = {
+    "training_size": "small",
+    "use_semantic": False,
+    "target_sentences": 1000,
+    "max_personal_selections": 1000,
+    "auto_cleanup_days": 14
+}
 
 class Predictpy:
     """
@@ -67,24 +74,36 @@ class Predictpy:
             auto_train=config.get('auto_train', auto_train),
             target_sentences=config.get('target_sentences', target_sentences)
         )
-          # Initialize semantic memory
-        self.semantic = None
+        
+        self._semantic = None
+        semantic_path = None
         if use_semantic:
-            try:
-                # Set up semantic DB path relative to main DB
-                if db_path:
-                    semantic_path = os.path.join(os.path.dirname(db_path), 'chroma')
-                else:
-                    semantic_path = os.path.join(os.path.expanduser('~'), '.predictpy', 'chroma')
-                
-                self.semantic = SemanticMemory(db_path=semantic_path)
-            except Exception as e:
-                logging.warning(f"Failed to initialize semantic memory: {e}")
-                self.semantic = None
+            # Set up semantic DB path relative to main DB
+            if db_path:
+                semantic_path = os.path.join(os.path.dirname(db_path), 'chroma')
+            else:
+                semantic_path = os.path.join(os.path.expanduser('~'), '.predictpy', 'chroma')
+        
+        self._semantic_config = {
+            'db_path': semantic_path,
+            'use_semantic': use_semantic
+        }
         
         # Callbacks for integration
         self._on_prediction_callback = None
         self._on_selection_callback = None
+    
+    @property
+    def semantic(self):
+        """Lazy load semantic memory only when accessed."""
+        if self._semantic is None and self._semantic_config['use_semantic']:
+            try:
+                from .semantic import SemanticMemory
+                self._semantic = SemanticMemory(db_path=self._semantic_config['db_path'])
+            except Exception as e:
+                logging.warning(f"Failed to initialize semantic memory: {e}")
+                self._semantic = False  # Mark as failed
+        return self._semantic if self._semantic is not False else None
     
     def predict(self, text: Union[str, List[str]], count: int = 5) -> List[str]:
         if isinstance(text, str):
@@ -340,6 +359,100 @@ class Predictpy:
     def has_semantic(self) -> bool:
         """Check if semantic features are available."""
         return self.semantic is not None
+
+    def cleanup_memory(self, aggressive=False):
+        """Free up memory immediately."""
+        import gc
+        
+        # Clean personal data
+        if aggressive:
+            self.reset_personal_data()
+        else:
+            # Just clean old data
+            conn = self.engine.predictor.conn
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM personal_selections 
+                WHERE last_selected < datetime('now', '-30 days')
+            """)
+            conn.commit()
+        
+        # Clean semantic data
+        if self.semantic:
+            removed = self.cleanup_semantic_data(days=30 if not aggressive else 7)
+            logging.info(f"Removed {removed} semantic patterns")
+        
+        # Force garbage collection
+        gc.collect()
+        
+        return self.stats  # Return new stats
+
+    def get_memory_usage(self):
+        """Get current memory usage of Predictpy components."""
+        import sys
+        import psutil
+        import os
+        
+        process = psutil.Process(os.getpid())
+        memory_info = {
+            'total_mb': process.memory_info().rss / 1024 / 1024,
+            'components': {},
+            'database_sizes': {}
+        }
+        
+        # Check component sizes
+        if hasattr(self, 'engine'):
+            memory_info['components']['engine'] = sys.getsizeof(self.engine) / 1024 / 1024
+        
+        if self._semantic is not None:
+            memory_info['components']['semantic'] = sys.getsizeof(self._semantic) / 1024 / 1024
+        
+        # Check database file sizes
+        if hasattr(self.engine.predictor, 'db_path'):
+            if os.path.exists(self.engine.predictor.db_path):
+                db_size = os.path.getsize(self.engine.predictor.db_path) / 1024 / 1024
+                memory_info['database_sizes']['main_db'] = f"{db_size:.2f} MB"
+        
+        # Check semantic database size
+        if self._semantic_config.get('db_path'):
+            semantic_path = self._semantic_config['db_path']
+            if os.path.exists(semantic_path):
+                total_size = 0
+                for root, dirs, files in os.walk(semantic_path):
+                    for file in files:
+                        total_size += os.path.getsize(os.path.join(root, file))
+                memory_info['database_sizes']['semantic_db'] = f"{total_size / 1024 / 1024:.2f} MB"
+        
+        # Add counts
+        try:
+            memory_info['counts'] = {
+                'vocabulary': self.engine.get_vocab_count(),
+                'personal_selections': len(self.engine.view_personal_data(limit=10000))
+            }
+        except:
+            pass
+        
+        return memory_info
+
+    def __del__(self):
+        """Clean up resources on deletion."""
+        try:
+            if hasattr(self, 'engine') and hasattr(self.engine.predictor, 'conn'):
+                self.engine.predictor.conn.close()
+            
+            # Clear semantic model
+            if hasattr(self, '_semantic') and self._semantic:
+                del self._semantic
+                
+        except Exception:
+            pass  # Ignore errors during cleanup
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.cleanup_memory(aggressive=False)
+        return False
 
 # Convenience function for quick usage
 def create_predictor(**kwargs) -> Predictpy:

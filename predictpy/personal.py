@@ -14,28 +14,38 @@ class PersonalModel:
     to personalize word predictions based on the user's writing patterns.
     """
     
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: Optional[str] = None, shared_conn: Optional[sqlite3.Connection] = None):
         """
         Initialize the personal model with the specified database.
         
         Args:
             db_path: Path to the SQLite database file. If None, uses default location.
+            shared_conn: An existing database connection to reuse.
         """
         # Set up database path
         if db_path is None:
-            # Use home directory to store the database
             self.db_path = os.path.join(os.path.expanduser('~'), '.Predictpy', 'personal_model.db')
-            # Ensure directory exists
             os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         else:
             self.db_path = db_path
+        
+        # Use shared connection if provided
+        if shared_conn:
+            self.conn = shared_conn
+            self.shared = True
+        else:
+            self.conn = None
+            self.shared = False
         
         self._init_db()
         
     def _init_db(self):
         """Initialize personal model database."""
-        conn = sqlite3.connect(self.db_path)
-        c = conn.cursor()
+        # Use existing connection or create new one
+        if self.conn is None:
+            self.conn = sqlite3.connect(self.db_path)
+        
+        c = self.conn.cursor()
         
         c.execute('''CREATE TABLE IF NOT EXISTS personal_selections (
             context TEXT,
@@ -48,8 +58,12 @@ class PersonalModel:
         c.execute('''CREATE INDEX IF NOT EXISTS idx_personal_selections 
                      ON personal_selections(context, count DESC)''')
         
-        conn.commit()
-        conn.close()
+        self.conn.commit()
+        
+        # Don't close if using shared connection
+        if not self.shared:
+            self.conn.close()
+            self.conn = None
     
     def record_selection(self, context_words: List[str], selected_word: str):
         """
@@ -61,8 +75,26 @@ class PersonalModel:
         """        # Use last 2 words as context (or less if not available)
         context = ' '.join(context_words[-2:]) if context_words else 'START'
         
-        conn = sqlite3.connect(self.db_path)
+        # Open connection if needed
+        if self.conn is None:
+            conn = sqlite3.connect(self.db_path)
+        else:
+            conn = self.conn
+        
         c = conn.cursor()
+
+        # ADD: Check and cleanup if too many entries
+        count = c.execute("SELECT COUNT(*) FROM personal_selections").fetchone()[0]
+        if count > 10000:  # Limit to 10k entries
+            # Delete oldest 1000 entries
+            c.execute("""
+                DELETE FROM personal_selections 
+                WHERE rowid IN (
+                    SELECT rowid FROM personal_selections 
+                    ORDER BY last_selected ASC 
+                    LIMIT 1000
+                )
+            """)
         
         now = datetime.now()
         c.execute('''INSERT INTO personal_selections (context, selected_word, last_selected)
@@ -72,7 +104,10 @@ class PersonalModel:
                   (context, selected_word, now, now))
         
         conn.commit()
-        conn.close()
+        
+        # Only close if we opened it
+        if self.conn is None:
+            conn.close()
     
     def get_personal_predictions(self, context_words: List[str], partial_word: str = "") -> List[Tuple[str, int]]:
         """
@@ -87,7 +122,10 @@ class PersonalModel:
         """
         context = ' '.join(context_words[-2:]) if context_words else 'START'
         
-        conn = sqlite3.connect(self.db_path)
+        if self.conn is None:
+            conn = sqlite3.connect(self.db_path)
+        else:
+            conn = self.conn
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         
@@ -106,7 +144,8 @@ class PersonalModel:
                 LIMIT 5
             ''', (context,)).fetchall()
         
-        conn.close()
+        if self.conn is None:
+            conn.close()
         
         # Return with boosted frequency (multiply by 1000 to ensure priority)
         return [(r['selected_word'], r['count'] * 1000) for r in results]
@@ -121,7 +160,10 @@ class PersonalModel:
         Returns:
             List of (word, score) tuples.
         """
-        conn = sqlite3.connect(self.db_path)
+        if self.conn is None:
+            conn = sqlite3.connect(self.db_path)
+        else:
+            conn = self.conn
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         
@@ -143,7 +185,8 @@ class PersonalModel:
                 LIMIT 10
             """, (context,)).fetchall()
         
-        conn.close()
+        if self.conn is None:
+            conn.close()
         
         # Return with high score to ensure priority
         return [(r['selected_word'], r['count'] * 1000) for r in results]
@@ -161,14 +204,18 @@ class PersonalModel:
         """
         context = ' '.join(context_words[-2:]) if context_words else 'START'
         
-        conn = sqlite3.connect(self.db_path)
+        if self.conn is None:
+            conn = sqlite3.connect(self.db_path)
+        else:
+            conn = self.conn
         c = conn.cursor()
         
         result = c.execute('''            SELECT count FROM personal_selections 
             WHERE context = ? AND selected_word = ?
         ''', (context, word)).fetchone()
         
-        conn.close()
+        if self.conn is None:
+            conn.close()
         
         # Return 2x boost for each time selected
         return (result[0] * 2) if result else 0
@@ -183,7 +230,10 @@ class PersonalModel:
         Returns:
             List of selection data dictionaries
         """
-        conn = sqlite3.connect(self.db_path)
+        if self.conn is None:
+            conn = sqlite3.connect(self.db_path)
+        else:
+            conn = self.conn
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         
@@ -193,6 +243,7 @@ class PersonalModel:
             LIMIT ?
         ''', (limit,)).fetchall()
         
-        conn.close()
+        if self.conn is None:
+            conn.close()
         
         return [dict(row) for row in results]

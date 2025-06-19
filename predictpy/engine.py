@@ -5,6 +5,9 @@ import os
 from typing import List, Tuple, Optional, Dict, Any, Set, Union
 from .predictor import WordPredictor
 from .personal import PersonalModel
+import sqlite3
+import threading
+from contextlib import contextmanager
 
 class WordPredictionEngine:
     """
@@ -31,17 +34,36 @@ class WordPredictionEngine:
             os.makedirs(base_dir, exist_ok=True)
             db_path = os.path.join(base_dir, 'predictpy.db')
         
+        # Create shared connection
+        self.shared_conn = sqlite3.connect(db_path, check_same_thread=False)
+        self.shared_conn.row_factory = sqlite3.Row
+        
+        # Add thread lock for database operations
+        self._db_lock = threading.Lock()
+        
+        # Enable WAL mode for better concurrency
+        self.shared_conn.execute("PRAGMA journal_mode=WAL")
+        self.shared_conn.commit()
+
         # Initialize both prediction models with the same database file
         self.predictor = WordPredictor(
             db_path=db_path,
+            shared_conn=self.shared_conn,  # Add parameter
             auto_train=auto_train,
             target_sentences=target_sentences
         )
         
         self.personal_model = PersonalModel(
-            db_path=db_path
+            db_path=db_path,
+            shared_conn=self.shared_conn  # Add parameter
         )
     
+    @contextmanager
+    def _get_connection(self):
+        """Thread-safe connection access."""
+        with self._db_lock:
+            yield self.shared_conn
+
     def predict(self, context_words: List[str], partial_word: str = "",
                 max_suggestions: int = 5, learn: bool = True, selected_index: int = -1) -> List[str]:
         """

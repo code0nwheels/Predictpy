@@ -23,36 +23,41 @@ class WordPredictor:
 	with training capabilities built-in.
 	"""
 	
-	def __init__(self, db_path: Optional[str] = None, auto_train: bool = True, target_sentences: int = 10000):
+	def __init__(self, db_path: Optional[str] = None, shared_conn: Optional[sqlite3.Connection] = None, 
+             auto_train: bool = True, target_sentences: int = 10000):
 		"""
 		Initialize the word predictor with the specified database.
 		
 		Args:
 			db_path: Path to the SQLite database file. If None, uses default location.
+			shared_conn: An existing database connection to reuse.
 			auto_train: Whether to automatically train the model if the database doesn't exist.
 			target_sentences: Number of sentences to use for training if auto_train is True.
 		"""
 		# Set up database path
 		if db_path is None:
-			# Use package directory to store the database
 			self.db_path = os.path.join(os.path.expanduser('~'), '.Predictpy', 'word_predictor.db')
-			# Ensure directory exists
 			os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
 		else:
 			self.db_path = db_path
+		
 		# Check if database exists and train if necessary
 		if not os.path.exists(self.db_path):
 			if auto_train:
 				logging.info(f"Database not found at {self.db_path}, training model...")
 				self._setup_spacy()
 				self._train_model(target_sentences)
-				# Connection is created in _train_model now
+				# Connection is created in _train_model
 			else:
 				raise FileNotFoundError(f"Database not found at {self.db_path} and auto_train is disabled.")
+		elif shared_conn:
+			# Use shared connection if provided
+			self.conn = shared_conn
 		else:
-			# Database exists, just connect to it
+			# Create new connection
 			self.conn = sqlite3.connect(self.db_path)
 			self.conn.row_factory = sqlite3.Row
+		
 		logging.info(f"Word predictor initialized with database: {self.db_path}")
 		
 	def _setup_spacy(self):
@@ -185,6 +190,10 @@ class WordPredictor:
 				# Create database
 		self.conn = self._create_database()
 		self._import_spacy_vocabulary()
+
+		del self.nlp
+		self.nlp = None
+
 		c = self.conn.cursor()
 		
 		# Collect sentences
@@ -250,7 +259,8 @@ class WordPredictor:
 		
 		c.executemany("INSERT INTO ngrams (type, context, word, frequency, first_letter) VALUES (?, ?, ?, ?, ?)", bigram_data)
 		logging.info(f"Inserted {len(bigram_data)} bigrams")
-				# Insert trigrams
+		
+		# Insert trigrams
 		logging.info("Inserting trigrams...")
 		trigram_data = []
 		for (context, word), count in trigram_counts.most_common():
@@ -277,24 +287,21 @@ class WordPredictor:
 		logging.info(f"Collecting {target_sentences} sentences for training...")
 		
 		try:
-			# Load DailyDialog dataset which is good for conversational text
-			dataset = load_dataset("daily_dialog", split="train")
+			from datasets import load_dataset
 			
-			# Collect unique sentences
 			sentences = []
-			for dialog in dataset["dialog"]:
-				for utterance in dialog:
-					# Split utterance into sentences
+			dataset = load_dataset("daily_dialog", split="train", streaming=True)
+			
+			# Take only what we need
+			for dialog in dataset.take(target_sentences // 5):  # Estimate ~5 sentences per dialog
+				for utterance in dialog["dialog"]:
 					for sentence in re.split(r'(?<=[.!?])\s+', utterance):
 						if sentence and len(sentence.split()) >= 2:
 							sentences.append(sentence)
 							if len(sentences) >= target_sentences:
 								return sentences
 			
-			# If we don't have enough sentences, return what we have
-			logging.warning(f"Only collected {len(sentences)} sentences (requested {target_sentences})")
 			return sentences
-			
 		except Exception as e:
 			logging.error(f"Error collecting sentences: {e}")
 			# Fallback to a small set of example sentences
