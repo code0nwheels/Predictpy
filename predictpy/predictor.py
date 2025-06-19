@@ -2,12 +2,13 @@
 Main word prediction module based on n-gram language models.
 """
 import os
+import sys
 import sqlite3
 from pathlib import Path
 import logging
 from collections import Counter
 import re
-import nltk
+import spacy
 from datasets import load_dataset
 from typing import List, Tuple, Set, Dict, Optional, Any, Union
 
@@ -48,20 +49,28 @@ class WordPredictor:
 				self._train_model(target_sentences)
 			else:
 				raise FileNotFoundError(f"Database not found at {self.db_path} and auto_train is disabled.")
-		
 		# Connect to database
 		self.conn = sqlite3.connect(self.db_path)
 		self.conn.row_factory = sqlite3.Row
 		logging.info(f"Word predictor initialized with database: {self.db_path}")
-
+		
 	def _setup_nltk(self):
-		"""Download necessary NLTK data."""
-		for package in ['punkt', 'words']:
-			try:
-				nltk.data.find(f'tokenizers/{package}' if package == 'punkt' else f'corpora/{package}')
-			except:
-				logging.info(f"Downloading NLTK package: {package}")
-				nltk.download(package, quiet=True)
+		"""Set up language processing (using SpaCy instead of NLTK)."""
+		# For backward compatibility, this method is kept but now uses SpaCy
+		self._setup_spacy()
+	
+	def _setup_spacy(self):
+		"""Load SpaCy model for vocabulary access."""
+		try:
+			self.nlp = spacy.load("en_core_web_sm")
+			logging.info("SpaCy model loaded successfully")
+		except OSError:
+			logging.info("Downloading SpaCy model: en_core_web_sm")
+			# Download the model if not available
+			import subprocess
+			subprocess.call([sys.executable, "-m", "spacy", "download", "en_core_web_sm"])
+			self.nlp = spacy.load("en_core_web_sm")
+			logging.info("SpaCy model downloaded and loaded successfully")
 	
 	def _create_database(self):
 		"""Create SQLite database with proper tables and indexes."""
@@ -139,31 +148,16 @@ class WordPredictor:
 			target_sentences: Number of sentences to use for training
 		"""
 		logging.info(f"Starting model training with {target_sentences} sentences...")
+				# Setup SpaCy
+		self._setup_spacy()
 		
-		# Setup NLTK
-		self._setup_nltk()
-		
-		# Load English dictionary
-		logging.info("Loading English dictionary...")
-		initial_english_words = set(nltk.corpus.words.words())
-		english_words = {word.lower() for word in initial_english_words if len(word) > 1 or word.lower() in ['a', 'i']}
-		
-		# Add common contractions
-		common_contractions = {
-			"don't", "can't", "won't", "it's", "isn't", "wasn't", "weren't", 
-			"he's", "she's", "i'm", "you're", "we're", "they're", 
-			"i've", "you've", "we've", "they've", "i'd", "you'd", 
-			"he'd", "she'd", "we'd", "they'd", "i'll", "you'll", 
-			"he'll", "she'll", "we'll", "they'll", "aren't", "couldn't", 
-			"didn't", "doesn't", "hadn't", "hasn't", "haven't", "shouldn't", 
-			"wouldn't", "that's", "what's", "where's", "when's", "who's", 
-			"why's", "how's", "let's", "there's", "here's"
-		}
-		english_words.update(common_contractions)
+		# Load English dictionary using SpaCy
+		logging.info("Loading English dictionary from SpaCy...")
+		english_words = {word.lower() for word in self.nlp.vocab.string}
 		
 		# Remove fragments
 		english_words -= {'don', 't', 's'}
-		logging.info(f"Dictionary loaded with {len(english_words)} words")
+		logging.info(f"SpaCy dictionary loaded with {len(english_words)} words")
 		
 		# Create database
 		conn = self._create_database()

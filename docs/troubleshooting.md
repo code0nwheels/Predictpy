@@ -41,32 +41,31 @@ ImportError: No module named 'chromadb'
    pip install sentence-transformers
    ```
 
-### NLTK Data Download Issues
+### SpaCy Model Download Issues
 
-**Problem:** NLTK punkt tokenizer not found
+**Problem:** SpaCy model not found
 
 ```
-LookupError: Resource punkt not found.
+OSError: [E050] Can't find model 'en_core_web_sm'
 ```
 
 **Solutions:**
 
-1. **Download NLTK data manually:**
+1. **Download SpaCy model manually:**
    ```python
-   import nltk
-   nltk.download('punkt')
+   import spacy
+   spacy.cli.download("en_core_web_sm")
    ```
 
-2. **Download all NLTK data:**
-   ```python
-   import nltk
-   nltk.download('all')
+2. **Download using command line:**
+   ```bash
+   python -m spacy download en_core_web_sm
    ```
 
-3. **Set NLTK data path:**
+3. **Set SpaCy data path:**
    ```python
-   import nltk
-   nltk.data.path.append('/custom/nltk_data/path')
+   import spacy
+   spacy.util.set_data_path('/custom/spacy_data/path')
    ```
 
 ### Dependencies Conflict
@@ -88,7 +87,7 @@ LookupError: Resource punkt not found.
 
 2. **Update conflicting packages:**
    ```bash
-   pip install --upgrade nltk datasets
+   pip install --upgrade spacy datasets
    ```
 
 ---
@@ -423,12 +422,11 @@ def diagnose_predictpy():
         print(f"Sentence-transformers: {sentence_transformers.__version__}")
     except:
         print("Sentence-transformers: Not available")
-    
-    try:
-        import nltk
-        print(f"NLTK version: {nltk.__version__}")
+      try:
+        import spacy
+        print(f"SpaCy version: {spacy.__version__}")
     except:
-        print("NLTK: Not available")
+        print("SpaCy: Not available")
     
     # Database info
     print(f"SQLite version: {sqlite3.sqlite_version}")
@@ -559,7 +557,7 @@ When reporting issues, include:
 | Error Message | Likely Cause | Solution |
 |---------------|--------------|----------|
 | `ImportError: No module named 'chromadb'` | ChromaDB not installed | `pip install chromadb` or use `use_semantic=False` |
-| `LookupError: Resource punkt not found` | NLTK data missing | `nltk.download('punkt')` |
+| `OSError: [E050] Can't find model 'en_core_web_sm'` | SpaCy model missing | `python -m spacy download en_core_web_sm` |
 | `sqlite3.DatabaseError: database disk image is malformed` | Corrupted database | Delete database file and reinitialize |
 | `MemoryError` | Insufficient memory | Use smaller training size or disable semantic features |
 | `PermissionError` | File access denied | Check file permissions or use different path |

@@ -26,7 +26,7 @@ pip install -e .
 
 - Python 3.7 or higher
 - Required packages (installed automatically):
-  - `nltk >= 3.6.0`
+  - `spacy >= 3.6.0`
   - `datasets >= 2.0.0` 
   - `chromadb >= 0.4.0`
   - `sentence-transformers >= 2.2.0`

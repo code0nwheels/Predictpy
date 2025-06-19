@@ -8,11 +8,11 @@ import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Union
 import re
+import sys
 
 import chromadb
 from sentence_transformers import SentenceTransformer
-import nltk
-from nltk.tokenize import sent_tokenize
+import spacy
 
 
 class SemanticMemory:
@@ -37,16 +37,20 @@ class SemanticMemory:
         self.collection = self.client.get_or_create_collection(
             name="user_thoughts",
             metadata={"hnsw:space": "cosine"}
-        )
-        
-        # Initialize sentence transformer
+        )        # Initialize sentence transformer
         self.encoder = SentenceTransformer(model_name)
         
-        # Download NLTK data if needed
+        # Load SpaCy model for enhanced language processing
         try:
-            nltk.data.find('tokenizers/punkt')
-        except LookupError:
-            nltk.download('punkt')
+            self.nlp = spacy.load("en_core_web_sm")
+            logging.info("SpaCy model loaded successfully")
+        except OSError:
+            logging.info("Downloading SpaCy model: en_core_web_sm")
+            # Download the model if not available
+            import subprocess
+            subprocess.call([sys.executable, "-m", "spacy", "download", "en_core_web_sm"])
+            self.nlp = spacy.load("en_core_web_sm")
+            logging.info("SpaCy model downloaded and loaded successfully")
     
     def store_text(self, text: str, context_before: str = "", context_after: str = "",
                    text_type: str = "general", tags: Optional[List[str]] = None) -> int:
@@ -162,21 +166,27 @@ class SemanticMemory:
                         'word_count': len(completion.split())
                     })
             
-            # Sort by confidence and return top results
-            completions.sort(key=lambda x: x['confidence'], reverse=True)
+            # Sort by confidence and return top results            completions.sort(key=lambda x: x['confidence'], reverse=True)
             return completions[:n_results]
             
         except Exception as e:
             logging.error(f"Error predicting completion: {e}")
             return []
-    
+            
     def _split_thoughts(self, text: str) -> List[str]:
-        """Split text into semantic units (thoughts/sentences)."""
+        """Split text into semantic units (thoughts/sentences) using SpaCy's advanced language processing."""
         # Clean text
         text = re.sub(r'\s+', ' ', text.strip())
         
-        # Split into sentences
-        sentences = sent_tokenize(text)
+        # Use SpaCy for better sentence segmentation
+        doc = self.nlp(text)
+        sentences = [sent.text.strip() for sent in doc.sents if sent.text.strip()]
+          # If SpaCy doesn't find any sentences, create a simple split as fallback
+        if not sentences:
+            # Simple fallback: split on common sentence ending punctuation
+            import re
+            simple_sentences = re.split(r'(?<=[.!?])\s+', text)
+            sentences = [s.strip() for s in simple_sentences if s.strip()]
         
         # Group sentences into thoughts
         thoughts = []
@@ -197,7 +207,7 @@ class SemanticMemory:
         # Add remaining sentences as a thought
         if current_thought:
             thoughts.append(' '.join(current_thought))
-        
+
         return [t for t in thoughts if t.strip()]
     
     def _is_complete_thought(self, sentences: List[str]) -> bool:
@@ -220,11 +230,15 @@ class SemanticMemory:
         return ends_conclusively and reasonable_length and multiple_sentences
     
     def _classify_thought(self, thought: str) -> str:
-        """Classify the type of thought/sentence."""
+        """Classify the type of thought/sentence using SpaCy's advanced NLP capabilities."""
         thought_lower = thought.lower()
         
-        # Simple classification based on patterns
-        if thought.endswith('?'):
+        # Get SpaCy analysis
+        doc = self.nlp(thought)
+        
+        # Enhanced classification using SpaCy's NLP features
+        # Check for questions based on both punctuation and question words
+        if thought.endswith('?') or any(token.text.lower() in {'what', 'who', 'where', 'when', 'why', 'how'} and token.pos_ == 'SCONJ' for token in doc[:3]):
             return 'question'
         elif thought.endswith('!'):
             return 'exclamation'
@@ -234,8 +248,12 @@ class SemanticMemory:
             return 'apology'
         elif thought_lower.startswith(('i think', 'i believe', 'in my opinion')):
             return 'opinion'
-        elif any(word in thought_lower for word in ['will', 'would', 'could', 'should', 'plan to']):
+        # Use SpaCy's verb analysis for intention detection
+        elif any(token.lemma_ in {'will', 'would', 'could', 'should', 'plan', 'intend', 'hope', 'expect'} for token in doc):
             return 'intention'
+        # Check if this is an imperative sentence (command)
+        elif doc[0].pos_ == 'VERB' and doc[0].tag_ == 'VB':
+            return 'command'
         else:
             return 'statement'
     

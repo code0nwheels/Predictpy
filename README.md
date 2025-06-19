@@ -87,7 +87,7 @@ predictor = Predictpy(use_semantic=False)
 ## Requirements
 
 - Python 3.7+
-- `nltk >= 3.6.0`
+- `spacy >= 3.6.0`
 - `datasets >= 2.0.0`
 - `chromadb >= 0.4.0` (for semantic features)
 - `sentence-transformers >= 2.2.0` (for semantic features)
