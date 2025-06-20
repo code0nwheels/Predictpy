@@ -11,6 +11,7 @@ import re
 import spacy
 from datasets import load_dataset
 from typing import List, Tuple, Set, Dict, Optional, Any, Union
+from functools import lru_cache
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -57,6 +58,10 @@ class WordPredictor:
 			# Create new connection
 			self.conn = sqlite3.connect(self.db_path)
 			self.conn.row_factory = sqlite3.Row
+		
+		# Cache frequent queries
+		self._cached_ngram_query = lru_cache(maxsize=2000)(self._query_ngrams)
+		self._cached_word_query = lru_cache(maxsize=1000)(self._query_words)
 		
 		logging.info(f"Word predictor initialized with database: {self.db_path}")
 		
@@ -312,7 +317,6 @@ class WordPredictor:
 				"Python is a great programming language",
 				"Machine learning models can predict text"
 			]
-
 	def predict(self, context_words: List[str], partial_word: str = "", max_suggestions: int = 10) -> Tuple[List[str], Dict[str, Any]]:
 		"""
 		Predict next words based on context and partial word input.
@@ -330,56 +334,81 @@ class WordPredictor:
 		c = self.conn.cursor()
 		suggestions = Counter()
 		debug_info = {'trigram_hits': 0, 'bigram_hits': 0, 'unigram_hits': 0}
-
-		# 1. Trigram search
-		if len(context_words) >= 2:
-			trigram_context = f"{context_words[-2]} {context_words[-1]}"
-			query = "SELECT word, frequency FROM ngrams WHERE type = 'trigram' AND context = ?"
-			params: List[Union[str, int]] = [trigram_context]
-			if partial_word:
-				query += " AND word LIKE ?"
-				params.append(f"{partial_word}%")
-			query += " ORDER BY frequency DESC LIMIT ?"
-			params.append(max_suggestions)
-			
-			c.execute(query, params)
-			for row in c.fetchall():
-				suggestions[row['word']] += row['frequency']
+		
+		# Convert to hashable types
+		context_tuple = tuple(w.lower() for w in context_words)
+		partial_lower = partial_word.lower()
+		
+		# 1. Try cached trigram search
+		if len(context_tuple) >= 2:
+			trigram_context = f"{context_tuple[-2]} {context_tuple[-1]}"
+			trigram_results = self._cached_ngram_query(
+				'trigram', 
+				trigram_context, 
+				partial_lower,
+				max_suggestions
+			)
+			for word, freq in trigram_results:
+				suggestions[word] += freq
 				debug_info['trigram_hits'] += 1
 
-		# 2. Bigram search
-		if len(suggestions) < max_suggestions and len(context_words) >= 1:
-			bigram_context = context_words[-1]
-			query = "SELECT word, frequency FROM ngrams WHERE type = 'bigram' AND context = ?"
-			params = [bigram_context]
-			if partial_word:
-				query += " AND word LIKE ?"
-				params.append(f"{partial_word}%")
-			query += " ORDER BY frequency DESC LIMIT ?"
-			params.append(max_suggestions - len(suggestions))
-
-			c.execute(query, params)
-			for row in c.fetchall():
-				if row['word'] not in suggestions:
-					suggestions[row['word']] += row['frequency']
+		# 2. Cached bigram search
+		if len(suggestions) < max_suggestions and len(context_tuple) >= 1:
+			bigram_context = context_tuple[-1]
+			bigram_results = self._cached_ngram_query(
+				'bigram',
+				bigram_context,
+				partial_lower,
+				max_suggestions - len(suggestions)
+			)
+			for word, freq in bigram_results:
+				if word not in suggestions:
+					suggestions[word] += freq
 					debug_info['bigram_hits'] += 1
 
-		# 3. Unigram (frequent words) search as fallback
+		# 3. Cached unigram (frequent words) search as fallback
 		if len(suggestions) < max_suggestions:
-			query = "SELECT word, frequency FROM words WHERE 1=1"
-			params = []
-			if partial_word:
-				query += " AND word LIKE ?"
-				params.append(f"{partial_word}%")
-			query += " ORDER BY frequency DESC LIMIT ?"
-			params.append(max_suggestions - len(suggestions))
-
-			c.execute(query, params)
-			for row in c.fetchall():
-				if row['word'] not in suggestions:
-					suggestions[row['word']] += row['frequency']
+			unigram_results = self._cached_word_query(
+				partial_lower,
+				max_suggestions - len(suggestions)
+			)
+			for word, freq in unigram_results:
+				if word not in suggestions:
+					suggestions[word] += freq
 					debug_info['unigram_hits'] += 1
 		
 		sorted_suggestions = [word for word, _ in suggestions.most_common(max_suggestions)]
 		
 		return sorted_suggestions, debug_info
+	
+	def _query_ngrams(self, ngram_type: str, context: str, partial: str, limit: int) -> tuple:
+		"""Cached n-gram query (returns tuple for hashability)."""
+		c = self.conn.cursor()
+		query = "SELECT word, frequency FROM ngrams WHERE type = ? AND context = ?"
+		params = [ngram_type, context]
+		
+		if partial:
+			query += " AND word LIKE ?"
+			params.append(f"{partial}%")
+		
+		query += " ORDER BY frequency DESC LIMIT ?"
+		params.append(limit)
+		
+		results = c.execute(query, params).fetchall()
+		return tuple((row['word'], row['frequency']) for row in results)
+	
+	def _query_words(self, partial: str, limit: int) -> tuple:
+		"""Cached word frequency query (returns tuple for hashability)."""
+		c = self.conn.cursor()
+		query = "SELECT word, frequency FROM words WHERE 1=1"
+		params = []
+		
+		if partial:
+			query += " AND word LIKE ?"
+			params.append(f"{partial}%")
+		
+		query += " ORDER BY frequency DESC LIMIT ?"
+		params.append(limit)
+		
+		results = c.execute(query, params).fetchall()
+		return tuple((row['word'], row['frequency']) for row in results)

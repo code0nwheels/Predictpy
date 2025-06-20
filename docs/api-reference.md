@@ -21,20 +21,27 @@ Initialize the predictor with optional configuration.
 - `training_size` *(str)*: Training data size - `"small"` (1k), `"medium"` (10k), or `"large"` (50k sentences). Default: `"medium"`
 - `use_semantic` *(bool)*: Enable semantic completion features (default: `True`, requires ChromaDB)
 
+The `config` dictionary can include a `cache_config` entry with the following properties:
+- `predict_size`: Maximum number of prediction entries to cache (default: 1000)
+- `completion_size`: Maximum number of completion entries to cache (default: 100)
+- `ttl_seconds`: Cache time to live in seconds (default: 3600, 1 hour)
+
 **Example:**
 ```python
-# Basic initialization
-predictor = Predictpy()
+from predictpy import Predictpy, calculate_optimal_cache_size
 
-# Custom configuration
-predictor = Predictpy(
-    db_path="/custom/path/predictions.db",
-    training_size="large",
-    use_semantic=True
-)
+# Using optimal cache sizes based on system memory
+cache_sizes = calculate_optimal_cache_size()
+predictor = Predictpy(config={'cache_config': cache_sizes})
 
-# From config file
-predictor = Predictpy(config="/path/to/config.json")
+# Using custom cache configuration
+predictor = Predictpy(config={
+    'cache_config': {
+        'predict_size': 2000,
+        'completion_size': 200,
+        'ttl_seconds': 7200  # 2 hours
+    }
+})
 ```
 
 ---
@@ -485,4 +492,79 @@ from predictpy import Predictpy
 predictor: Predictpy = Predictpy()
 suggestions: List[str] = predictor.predict("Hello")
 completions: List[Dict[str, Any]] = predictor.predict_completion("Hello")
+```
+
+---
+
+## Cache Methods
+
+#### `cache_info`
+
+```python
+predictor.cache_info
+```
+
+Get detailed cache statistics.
+
+**Returns:**
+Dictionary with cache statistics including:
+- `predict_cache`: Statistics for the prediction cache (hits, misses, size, etc.)
+- `completion_cache`: Statistics for the completion cache (if semantic features are enabled)
+- `modifications_since_clear`: Number of modifications since last cache clear
+- `last_modification`: Timestamp of the last modification
+- `hit_rate`: Cache hit rate percentage for each cache
+
+**Example:**
+```python
+cache_stats = predictor.cache_info
+print(f"Cache hit rate: {cache_stats['predict_cache']['hit_rate']:.2%}")
+print(f"Current cache size: {cache_stats['predict_cache']['currsize']}")
+```
+
+#### `clear_all_caches()`
+
+```python
+predictor.clear_all_caches()
+```
+
+Clear all caches and reset counters.
+
+**Example:**
+```python
+# Force clear all caches
+predictor.clear_all_caches()
+```
+
+## Utility Functions
+
+### `calculate_optimal_cache_size()`
+
+```python
+from predictpy import calculate_optimal_cache_size
+
+cache_sizes = calculate_optimal_cache_size(available_memory_mb=None)
+```
+
+Calculate optimal cache sizes based on available memory.
+
+**Parameters:**
+- `available_memory_mb` *(int, optional)*: Optional amount of memory to use (in MB). If None, automatically detects available memory.
+
+**Returns:**
+Dictionary with optimal cache sizes:
+- `predict_size`: Optimal size for prediction cache
+- `completion_size`: Optimal size for completion cache
+
+**Example:**
+```python
+from predictpy import calculate_optimal_cache_size, Predictpy
+
+# Get optimal cache sizes based on system memory
+cache_sizes = calculate_optimal_cache_size()
+print(f"Recommended cache sizes: {cache_sizes}")
+
+# Initialize predictor with optimal cache settings
+predictor = Predictpy(
+    config={'cache_config': cache_sizes}
+)
 ```

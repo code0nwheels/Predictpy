@@ -813,4 +813,74 @@ for result in results:
     print(f"{result['config_name']:15} | Init: {result['init_time']:.3f}s | Predict: {result['avg_prediction_time']:.3f}s | Semantic: {'Yes' if result['has_semantic'] else 'No'}")
 ```
 
+---
+
+## Performance Examples
+
+### Optimized Caching
+
+This example demonstrates how to use the caching system for optimal performance:
+
+```python
+"""
+Example usage of Predictpy with optimized caching.
+"""
+import time
+from predictpy import Predictpy, calculate_optimal_cache_size
+
+def main():
+    # Initialize with optimal cache sizes
+    cache_sizes = calculate_optimal_cache_size()
+    print(f"Using cache sizes: {cache_sizes}")
+    
+    predictor = Predictpy(
+        config={'cache_config': cache_sizes}
+    )
+    
+    # Monitor cache performance
+    print("Running prediction tests...")
+    for i in range(100):
+        # Mix of cached and new queries
+        if i % 3 == 0:
+            predictor.predict("I want to")  # Should be cached
+        else:
+            predictor.predict(f"Test phrase {i}")  # New query
+    
+    # Check cache performance
+    cache_info = predictor.cache_info
+    print(f"Cache hit rate: {cache_info['predict_cache']['hit_rate']:.2%}")
+    print(f"Cache size: {cache_info['predict_cache']['currsize']}/{cache_info['predict_cache']['maxsize']}")
+    
+    # Test invalidation
+    print("\nTesting cache invalidation...")
+    for i in range(60):
+        predictor.select("I like", "to")
+    
+    # Check modification counters
+    print(f"Modifications since clear: {predictor.cache_info['modifications_since_clear']}")
+    
+    # Force clear all caches
+    print("\nForcing cache clear...")
+    predictor.clear_all_caches()
+    print(f"Cache after clear - size: {predictor.cache_info['predict_cache']['currsize']}")
+
+if __name__ == "__main__":
+    main()
+```
+
+Expected output:
+
+```
+Using cache sizes: {'predict_size': 4096, 'completion_size': 256}
+Running prediction tests...
+Cache hit rate: 33.00%
+Cache size: 68/4096
+
+Testing cache invalidation...
+Modifications since clear: 10
+
+Forcing cache clear...
+Cache after clear - size: 0
+```
+
 This completes the examples documentation with practical, real-world usage patterns for different scenarios. Each example is self-contained and demonstrates key features of Predictpy in context.

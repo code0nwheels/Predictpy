@@ -6,6 +6,8 @@ from .engine import WordPredictionEngine
 import json
 import os
 import logging
+import time
+from functools import lru_cache
 
 def _get_version():
     """Get version without circular import."""
@@ -68,12 +70,26 @@ class Predictpy:
         }
         target_sentences = size_map.get(training_size, 10000)
         
+        # Cache configuration
+        self._cache_config = config.get('cache_config', {
+            'predict_size': 1000,
+            'completion_size': 100,
+            'ttl_seconds': 3600  # 1 hour
+        })
+        
+        # Track modifications
+        self._last_modification = time.time()
+        self._modification_count = 0
+        
         # Initialize engine with config
         self.engine = WordPredictionEngine(
             db_path=config.get('db_path', db_path),
             auto_train=config.get('auto_train', auto_train),
             target_sentences=config.get('target_sentences', target_sentences)
         )
+        
+        # Setup caches
+        self._setup_caching()
         
         self._semantic = None
         semantic_path = None
@@ -88,11 +104,10 @@ class Predictpy:
             'db_path': semantic_path,
             'use_semantic': use_semantic
         }
-        
-        # Callbacks for integration
+          # Callbacks for integration
         self._on_prediction_callback = None
         self._on_selection_callback = None
-    
+        
     @property
     def semantic(self):
         """Lazy load semantic memory only when accessed."""
@@ -104,8 +119,12 @@ class Predictpy:
                 logging.warning(f"Failed to initialize semantic memory: {e}")
                 self._semantic = False  # Mark as failed
         return self._semantic if self._semantic is not False else None
-    
+        
     def predict(self, text: Union[str, List[str]], count: int = 5) -> List[str]:
+        """Cached prediction with smart invalidation."""
+        # Check if we should clear stale cache
+        self._check_cache_staleness()
+        
         if isinstance(text, str):
             words = text.strip().split()
             if text.endswith(' '):
@@ -115,7 +134,11 @@ class Predictpy:
         else:
             context, partial = text, ""
         
-        return self.engine.predict(context, partial, count)
+        # Prepare cache key
+        cache_key = (tuple(context), partial, count)
+        
+        # Get from cache
+        return list(self._predict_cache(*cache_key))
     
     def get_vocab_count(self) -> int:
         """
@@ -138,7 +161,6 @@ class Predictpy:
             List of common sentence starter words.
         """
         return self.engine.get_sentence_starters(count, partial_word)
-    
     def select(self, 
                context: Union[str, List[str]], 
                word: str,
@@ -159,6 +181,15 @@ class Predictpy:
             context = context.strip().split()
         
         self.engine.record_selection(context, word)
+        
+        # Track modification for cache invalidation
+        self._modification_count += 1
+        self._last_modification = time.time()
+        
+        # Invalidate cache if too many modifications
+        if self._modification_count > 50:
+            self._partial_cache_clear()
+            self._modification_count = 0
           # Trigger callback if set
         if self._on_selection_callback:
             self._on_selection_callback(context, word, index)
@@ -198,7 +229,6 @@ class Predictpy:
                     logging.debug(f"Stored {stored_count} semantic patterns")
             except Exception as e:
                 logging.warning(f"Failed to store semantic patterns: {e}")
-    
     def predict_completion(self, text: str, min_words: int = 5, 
                           context: Optional[Dict[str, Any]] = None,
                           style: Optional[str] = None,
@@ -221,7 +251,10 @@ class Predictpy:
             >>> predictor.predict_completion("Thanks for your email.", 
                                            context={"type": "email_reply"})
         """
-        if not self.semantic:
+        # Check if we should clear stale cache
+        self._check_cache_staleness()
+        
+        if not hasattr(self, '_semantic') or not self.semantic:
             return []
         
         # Enhance context with style and length preferences
@@ -230,22 +263,34 @@ class Predictpy:
             enhanced_context["style"] = style
         if expected_length:
             enhanced_context["expected_length"] = expected_length
-        
-        try:
+            
+        # Use caching if available
+        if hasattr(self, '_completion_cache'):
+            # Convert context to hashable form
+            context_json = json.dumps(enhanced_context, sort_keys=True) if enhanced_context else ""
+            
+            try:
+                # Get from cache
+                completions = list(self._completion_cache(text, min_words, context_json))
+            except Exception:
+                # Fallback to direct call if any error
+                completions = self.semantic.predict_completion(
+                    text, 
+                    n_results=min_words,
+                    context=enhanced_context
+                )
+        else:
+            # No cache available
             completions = self.semantic.predict_completion(
                 text, 
                 n_results=min_words,
                 context=enhanced_context
             )
-            
-            # Filter by minimum words if specified
-            filtered = [c for c in completions if c.get('word_count', 0) >= min_words]
-            
-            return filtered if filtered else completions
-            
-        except Exception as e:
-            logging.error(f"Failed to predict completion: {e}")
-            return []
+        
+        # Filter by minimum words if specified
+        filtered = [c for c in completions if c.get('word_count', 0) >= min_words]
+        
+        return filtered if filtered else completions
         
     def reset_personal_data(self):
         """Clear all personal learning data."""
@@ -434,6 +479,71 @@ class Predictpy:
         
         return memory_info
 
+    def _setup_caching(self):
+        """Initialize caching with proper configuration."""
+        # Word prediction cache (most used)
+        self._predict_cache = lru_cache(
+            maxsize=self._cache_config.get('predict_size', 1000)
+        )(self._predict_uncached)
+        
+        # Completion cache (memory intensive)
+        if hasattr(self, '_semantic') and self._semantic:
+            self._completion_cache = lru_cache(
+                maxsize=self._cache_config.get('completion_size', 100)
+            )(self._completion_uncached)
+    
+    def _predict_uncached(self, context_tuple: tuple, partial: str, count: int) -> tuple:
+        """Actual prediction logic (cached)."""
+        context_list = list(context_tuple)
+        predictions = self.engine.predict(context_list, partial, count)
+        return tuple(predictions)  # Return tuple for caching
+    
+    def _completion_uncached(self, text: str, min_words: int, context_json: str) -> tuple:
+        """Actual completion logic (cached)."""
+        if not hasattr(self, '_semantic') or not self._semantic:
+            return tuple()
+        
+        context = json.loads(context_json) if context_json else {}
+        completions = self._semantic.predict_completion(text, n_results=min_words, context=context)
+        return tuple(completions)
+    
+    def _check_cache_staleness(self):
+        """Clear cache if data is too old."""
+        if time.time() - self._last_modification > self._cache_config.get('ttl_seconds', 3600):
+            self.clear_all_caches()
+    
+    def _partial_cache_clear(self):
+        """Clear only the most memory-intensive caches."""
+        if hasattr(self, '_completion_cache'):
+            self._completion_cache.cache_clear()
+    
+    def clear_all_caches(self):
+        """Clear all caches and reset counters."""
+        self._predict_cache.cache_clear()
+        if hasattr(self, '_completion_cache'):
+            self._completion_cache.cache_clear()
+        self._modification_count = 0
+    
+    @property
+    def cache_info(self):
+        """Get detailed cache statistics."""
+        info = {
+            'predict_cache': self._predict_cache.cache_info()._asdict(),
+            'modifications_since_clear': self._modification_count,
+            'last_modification': self._last_modification
+        }
+        
+        if hasattr(self, '_completion_cache'):
+            info['completion_cache'] = self._completion_cache.cache_info()._asdict()
+        
+        # Calculate hit rates
+        for cache_name, cache_info in info.items():
+            if isinstance(cache_info, dict) and 'hits' in cache_info:
+                total = cache_info['hits'] + cache_info['misses']
+                cache_info['hit_rate'] = cache_info['hits'] / total if total > 0 else 0
+        
+        return info
+    
     def __del__(self):
         """Clean up resources on deletion."""
         try:

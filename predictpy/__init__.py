@@ -8,6 +8,7 @@ from .predictor import WordPredictor
 from .personal import PersonalModel
 from .engine import WordPredictionEngine
 from .api import Predictpy
+from .utils import calculate_optimal_cache_size
 from .semantic import SemanticMemory
 
 __all__ = ["WordPredictor", "PersonalModel", "WordPredictionEngine", "Predictpy", "SemanticMemory"]

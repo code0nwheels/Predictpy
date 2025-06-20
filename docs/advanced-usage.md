@@ -893,4 +893,124 @@ except Exception as e:
     print(f"Redis backend not available: {e}")
 ```
 
-This advanced usage guide covers sophisticated techniques for power users who need custom training, performance optimization, plugin architectures, event-driven systems, and distributed storage backends.
+---
+
+## Performance Optimization
+
+### Optimizing Cache Configuration
+
+Predictpy implements smart caching to improve performance for frequently accessed predictions. Here's how to optimize caching for different scenarios:
+
+#### High-Performance Applications
+
+For applications with high query rates:
+
+```python
+from predictpy import Predictpy, calculate_optimal_cache_size
+
+# Get memory-aware cache sizing
+cache_sizes = calculate_optimal_cache_size()
+
+# Increase cache size for predictions (high-volume, low-memory usage)
+cache_sizes['predict_size'] = cache_sizes['predict_size'] * 2
+# Reduce completion cache (lower-volume, higher memory usage)
+cache_sizes['completion_size'] = max(50, int(cache_sizes['completion_size'] / 2))
+
+predictor = Predictpy(
+    config={
+        'cache_config': cache_sizes,
+        'use_semantic': True
+    }
+)
+
+# Monitor cache performance
+for _ in range(100):
+    predictor.predict("test input")
+    
+cache_stats = predictor.cache_info
+print(f"Cache hit rate: {cache_stats['predict_cache']['hit_rate']:.2%}")
+```
+
+#### Memory-Constrained Environments
+
+For devices with limited memory:
+
+```python
+from predictpy import Predictpy
+
+# Conservative cache settings
+predictor = Predictpy(
+    config={
+        'cache_config': {
+            'predict_size': 500,       # Smaller prediction cache
+            'completion_size': 20,     # Minimal completion cache
+            'ttl_seconds': 1800        # Shorter TTL (30 minutes)
+        },
+        'use_semantic': False          # Disable semantic features to save memory
+    }
+)
+```
+
+#### Working with Dynamic Content
+
+For applications where content changes frequently:
+
+```python
+from predictpy import Predictpy
+
+predictor = Predictpy(
+    config={
+        'cache_config': {
+            'predict_size': 1000,
+            'completion_size': 100,
+            'ttl_seconds': 300  # Short 5-minute TTL for dynamic content
+        }
+    }
+)
+
+# Force cache refresh after significant content changes
+def update_content(new_content):
+    # Process content updates...
+    
+    # Clear caches to reflect new content
+    predictor.clear_all_caches()
+```
+
+### Monitoring Cache Performance
+
+Track and log cache performance:
+
+```python
+import time
+import json
+
+def monitor_cache_performance(predictor, interval=60, duration=3600):
+    """Monitor cache performance over time."""
+    start_time = time.time()
+    end_time = start_time + duration
+    performance_log = []
+    
+    while time.time() < end_time:
+        # Run some predictions
+        for phrase in ["I want to", "Thank you for", "Please help me"]:
+            predictor.predict(phrase)
+            
+        # Record performance metrics
+        cache_info = predictor.cache_info
+        performance_log.append({
+            'timestamp': time.time(),
+            'hit_rate': cache_info['predict_cache']['hit_rate'],
+            'size': cache_info['predict_cache']['currsize'],
+            'maxsize': cache_info['predict_cache']['maxsize'],
+            'modifications': cache_info['modifications_since_clear']
+        })
+        
+        # Wait for next interval
+        time.sleep(interval)
+    
+    # Save performance log
+    with open('cache_performance.json', 'w') as f:
+        json.dump(performance_log, f, indent=2)
+    
+    return performance_log
+```

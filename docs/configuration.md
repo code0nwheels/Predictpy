@@ -36,6 +36,11 @@ Create reusable configuration files in JSON format:
         "enable_personal": true,
         "weight_personal": 0.3,
         "cleanup_days": 90
+    },
+    "cache_config": {
+        "predict_size": 2000,
+        "completion_size": 200,
+        "ttl_seconds": 3600
     }
 }
 ```
@@ -527,4 +532,84 @@ if test_configuration(production_config):
     predictor = Predictpy(config=production_config)
 else:
     predictor = Predictpy()  # Fallback to defaults
+```
+
+---
+
+## Caching Configuration
+
+Predictpy implements smart caching to improve performance of frequently accessed predictions and completions. You can configure cache behavior to optimize for your specific use case.
+
+### Cache Settings
+
+The following cache settings can be configured:
+
+| Parameter | Description | Default | 
+|-----------|-------------|---------|
+| `predict_size` | Maximum number of prediction entries to cache | 1000 |
+| `completion_size` | Maximum number of completion entries to cache | 100 |
+| `ttl_seconds` | Cache time to live in seconds (cache invalidation period) | 3600 (1 hour) |
+
+### Memory-Aware Cache Sizing
+
+Predictpy provides a utility function to calculate optimal cache sizes based on available system memory:
+
+```python
+from predictpy import calculate_optimal_cache_size, Predictpy
+
+# Get optimal cache sizes based on system memory
+cache_sizes = calculate_optimal_cache_size()
+print(f"Using cache sizes: {cache_sizes}")
+
+# Initialize with optimal cache settings
+predictor = Predictpy(
+    config={'cache_config': cache_sizes}
+)
+```
+
+The `calculate_optimal_cache_size()` function:
+- Detects available system memory (requires `psutil` package)
+- Allocates approximately 5% of available memory for caching (capped at 200MB)
+- Distributes memory between prediction cache (80%) and completion cache (20%)
+- Takes into account estimated entry sizes (predictions ~200 bytes, completions ~2KB)
+- Falls back to default values if `psutil` is not installed
+
+### Manual Cache Configuration
+
+You can manually configure cache settings in the config dictionary:
+
+```python
+predictor = Predictpy(
+    config={
+        "cache_config": {
+            "predict_size": 5000,    # More predictions for high-query applications
+            "completion_size": 50,    # Fewer completions to save memory
+            "ttl_seconds": 7200      # 2 hour cache lifetime
+        }
+    }
+)
+```
+
+### Cache Monitoring
+
+Monitor cache performance using the `cache_info` property:
+
+```python
+# Check cache performance
+cache_info = predictor.cache_info
+print(f"Cache hit rate: {cache_info['predict_cache']['hit_rate']:.2%}")
+print(f"Cache size: {cache_info['predict_cache']['currsize']}/{cache_info['predict_cache']['maxsize']}")
+print(f"Modifications since clear: {cache_info['modifications_since_clear']}")
+```
+
+### Cache Invalidation
+
+Caches are automatically invalidated when:
+- The time-to-live period expires (`ttl_seconds`)
+- Too many modifications are recorded (after 50 selections)
+- You manually clear the cache with `clear_all_caches()`
+
+```python
+# Force clear all caches
+predictor.clear_all_caches()
 ```

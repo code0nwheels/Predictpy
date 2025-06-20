@@ -199,6 +199,89 @@ sqlite3.DatabaseError: database disk image is malformed
        predictor.predict_completion("warm up", min_words=1)
    ```
 
+### Cache-Related Problems
+
+**Problem:** Memory usage is too high with caching enabled
+
+**Solutions:**
+
+1. **Use memory-aware cache sizing:**
+   ```python
+   from predictpy import calculate_optimal_cache_size, Predictpy
+   
+   # Get system-appropriate cache sizes
+   cache_sizes = calculate_optimal_cache_size() 
+   
+   # Reduce further if needed
+   cache_sizes['predict_size'] = int(cache_sizes['predict_size'] * 0.5)
+   cache_sizes['completion_size'] = int(cache_sizes['completion_size'] * 0.5)
+   
+   predictor = Predictpy(config={'cache_config': cache_sizes})
+   ```
+
+2. **Disable the completion cache entirely:**
+   ```python
+   predictor = Predictpy(
+       config={
+           'cache_config': {
+               'predict_size': 1000,
+               'completion_size': 0  # Disable completion caching
+           }
+       }
+   )
+   ```
+
+**Problem:** Cache doesn't seem to be working (no performance improvement)
+
+**Solutions:**
+
+1. **Check cache hit rate:**
+   ```python
+   cache_info = predictor.cache_info
+   print(f"Cache hit rate: {cache_info['predict_cache']['hit_rate']:.2%}")
+   ```
+
+2. **Ensure cache isn't being invalidated too frequently:**
+   ```python
+   print(f"Modifications since clear: {predictor.cache_info['modifications_since_clear']}")
+   print(f"Last modification: {predictor.cache_info['last_modification']}")
+   ```
+
+3. **Increase cache TTL:**
+   ```python
+   predictor = Predictpy(
+       config={
+           'cache_config': {
+               'ttl_seconds': 86400  # 24 hours
+           }
+       }
+   )
+   ```
+
+**Problem:** Installing psutil fails for memory-aware caching
+
+**Solution:**
+
+1. **Manual psutil installation:**
+   ```bash
+   # Windows
+   pip install --upgrade setuptools
+   pip install psutil
+   
+   # Linux
+   sudo apt-get install python3-dev
+   pip install psutil
+   
+   # macOS
+   pip install psutil
+   ```
+
+2. **Use Predictpy without psutil:**
+   ```python
+   # Will use default cache sizes if psutil isn't available
+   predictor = Predictpy()
+   ```
+
 ---
 
 ## Semantic Feature Issues

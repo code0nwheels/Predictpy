@@ -16,6 +16,7 @@ Welcome to Predictpy - a Python package for intelligent word prediction and sema
 
 - **[Installation Guide](getting-started.md#installation)** - Get up and running quickly
 - **[Basic Usage](getting-started.md#basic-usage)** - Your first predictions
+- **[Cache Optimization](configuration.md#caching-configuration)** - Performance tuning
 - **[API Reference](api-reference.md)** - Complete method documentation
 - **[Examples](examples.md)** - Real-world usage examples
 
