@@ -12,7 +12,6 @@ import sys
 
 import chromadb
 from sentence_transformers import SentenceTransformer
-import spacy
 
 
 class SemanticMemory:
@@ -39,18 +38,7 @@ class SemanticMemory:
             metadata={"hnsw:space": "cosine"}
         )        # Initialize sentence transformer
         self.encoder = SentenceTransformer(model_name)
-        
-        # Load SpaCy model for enhanced language processing
-        try:
-            self.nlp = spacy.load("en_core_web_sm")
-            logging.info("SpaCy model loaded successfully")
-        except OSError:
-            logging.info("Downloading SpaCy model: en_core_web_sm")
-            # Download the model if not available
-            import subprocess
-            subprocess.call([sys.executable, "-m", "spacy", "download", "en_core_web_sm"])
-            self.nlp = spacy.load("en_core_web_sm")
-            logging.info("SpaCy model downloaded and loaded successfully")
+        logging.info(f"Sentence transformer model '{model_name}' loaded successfully")
     
     def store_text(self, text: str, context_before: str = "", context_after: str = "",
                    text_type: str = "general", tags: Optional[List[str]] = None) -> int:
@@ -177,16 +165,10 @@ class SemanticMemory:
         """Split text into semantic units (thoughts/sentences) using SpaCy's advanced language processing."""
         # Clean text
         text = re.sub(r'\s+', ' ', text.strip())
-        
-        # Use SpaCy for better sentence segmentation
-        doc = self.nlp(text)
-        sentences = [sent.text.strip() for sent in doc.sents if sent.text.strip()]
-          # If SpaCy doesn't find any sentences, create a simple split as fallback
-        if not sentences:
-            # Simple fallback: split on common sentence ending punctuation
-            import re
-            simple_sentences = re.split(r'(?<=[.!?])\s+', text)
-            sentences = [s.strip() for s in simple_sentences if s.strip()]
+          # Use regex-based sentence segmentation
+        # Split on common sentence ending punctuation
+        simple_sentences = re.split(r'(?<=[.!?])\s+', text)
+        sentences = [s.strip() for s in simple_sentences if s.strip()]
         
         # Group sentences into thoughts
         thoughts = []
@@ -226,19 +208,18 @@ class SemanticMemory:
         ends_conclusively = text.rstrip().endswith(('.', '!', '?', ':'))
         reasonable_length = 5 <= word_count <= 100
         multiple_sentences = len(sentences) > 1
-        
         return ends_conclusively and reasonable_length and multiple_sentences
-    
+        
     def _classify_thought(self, thought: str) -> str:
-        """Classify the type of thought/sentence using SpaCy's advanced NLP capabilities."""
+        """Classify the type of thought/sentence using simple pattern matching."""
         thought_lower = thought.lower()
         
-        # Get SpaCy analysis
-        doc = self.nlp(thought)
+        # Simple classification using regex patterns
+        # Check for questions based on punctuation and common question words
+        question_words = {'what', 'who', 'where', 'when', 'why', 'how'}
+        first_word = thought_lower.split()[0] if thought_lower.split() else ""
         
-        # Enhanced classification using SpaCy's NLP features
-        # Check for questions based on both punctuation and question words
-        if thought.endswith('?') or any(token.text.lower() in {'what', 'who', 'where', 'when', 'why', 'how'} and token.pos_ == 'SCONJ' for token in doc[:3]):
+        if thought.endswith('?') or first_word in question_words:
             return 'question'
         elif thought.endswith('!'):
             return 'exclamation'
@@ -248,11 +229,11 @@ class SemanticMemory:
             return 'apology'
         elif thought_lower.startswith(('i think', 'i believe', 'in my opinion')):
             return 'opinion'
-        # Use SpaCy's verb analysis for intention detection
-        elif any(token.lemma_ in {'will', 'would', 'could', 'should', 'plan', 'intend', 'hope', 'expect'} for token in doc):
+        # Basic intention detection using keyword matching
+        elif any(word in thought_lower for word in ['will', 'would', 'could', 'should', 'plan', 'intend', 'hope', 'expect']):
             return 'intention'
-        # Check if this is an imperative sentence (command)
-        elif doc[0].pos_ == 'VERB' and doc[0].tag_ == 'VB':
+        # Basic command detection (starts with a verb)
+        elif thought_lower.split() and thought_lower.split()[0].endswith(('e', 'ate', 'ize', 'ise', 'en', 'fy', 'ck')):
             return 'command'
         else:
             return 'statement'

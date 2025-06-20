@@ -8,10 +8,12 @@ from pathlib import Path
 import logging
 from collections import Counter
 import re
-import spacy
 from datasets import load_dataset
 from typing import List, Tuple, Set, Dict, Optional, Any, Union
 from functools import lru_cache
+
+# Import our word list manager
+from .wordlist import WordList
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -41,16 +43,41 @@ class WordPredictor:
 			os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
 		else:
 			self.db_path = db_path
+				# Check if database exists and train if necessary
+		db_exists = os.path.exists(self.db_path)
 		
-		# Check if database exists and train if necessary
-		if not os.path.exists(self.db_path):
+		# Handle shared connection
+		if shared_conn:
+			self.conn = shared_conn
+			self.conn.row_factory = sqlite3.Row
+		# Handle non-existing database
+		elif not db_exists:
 			if auto_train:
 				logging.info(f"Database not found at {self.db_path}, training model...")
-				self._setup_spacy()
+				self._setup_wordlist()
 				self._train_model(target_sentences)
 				# Connection is created in _train_model
+				return  # _train_model already created everything we need
 			else:
 				raise FileNotFoundError(f"Database not found at {self.db_path} and auto_train is disabled.")
+		# Handle existing database
+		else:
+			self.conn = sqlite3.connect(self.db_path)
+			self.conn.row_factory = sqlite3.Row
+		
+		# At this point self.conn is initialized, check if tables exist
+		cursor = self.conn.cursor()
+		cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('words', 'ngrams')")
+		tables = [row[0] for row in cursor.fetchall()]
+		tables_exist = len(tables) == 2
+		
+		if not tables_exist:
+			if auto_train:
+				logging.info(f"Tables not found in database {self.db_path}, training model...")
+				self._setup_wordlist()
+				self._train_model(target_sentences)
+			else:
+				raise FileNotFoundError("Required tables not found in database and auto_train is disabled.")
 		elif shared_conn:
 			# Use shared connection if provided
 			self.conn = shared_conn
@@ -62,21 +89,17 @@ class WordPredictor:
 		# Cache frequent queries
 		self._cached_ngram_query = lru_cache(maxsize=2000)(self._query_ngrams)
 		self._cached_word_query = lru_cache(maxsize=1000)(self._query_words)
-		
 		logging.info(f"Word predictor initialized with database: {self.db_path}")
 		
-	def _setup_spacy(self):
-		"""Load SpaCy model for vocabulary access."""
+	def _setup_wordlist(self):
+		"""Initialize WordList for vocabulary access."""
 		try:
-			self.nlp = spacy.load("en_core_web_sm")
-			logging.info("SpaCy model loaded successfully")
-		except OSError:
-			logging.info("Downloading SpaCy model: en_core_web_sm")
-			# Download the model if not available
-			import subprocess
-			subprocess.call([sys.executable, "-m", "spacy", "download", "en_core_web_sm"])
-			self.nlp = spacy.load("en_core_web_sm")
-			logging.info("SpaCy model downloaded and loaded successfully")
+			# Create word list with comprehensive English vocabulary
+			self.wordlist = WordList('comprehensive')
+			logging.info("WordList initialized successfully")
+		except Exception as e:
+			logging.error(f"Error initializing WordList: {e}")
+			raise
 	
 	def _create_database(self):
 		"""Create SQLite database with proper tables and indexes."""
@@ -112,37 +135,16 @@ class WordPredictor:
 		c.execute("CREATE INDEX idx_words_starter ON words(is_starter, frequency DESC)")
 		c.execute("CREATE INDEX idx_ngrams_lookup ON ngrams(type, context, first_letter)")
 		c.execute("CREATE INDEX idx_ngrams_freq ON ngrams(type, context, frequency DESC)")
-		
+	
 		conn.commit()
 		return conn
-
-	def _import_spacy_vocabulary(self):
-		"""Import all words from SpaCy vocabulary into database."""
-		c = self.conn.cursor()
 		
-		logging.info("Importing full SpaCy vocabulary...")
-		imported = 0
-		
-		for word in self.nlp.vocab.strings:
-			word_lower = word.lower()
-			
-			# Skip non-alphabetic strings and very short words
-			if len(word_lower) > 1 and word_lower.isalpha():
-				try:
-					c.execute("""INSERT OR IGNORE INTO words 
-							   VALUES (?, ?, ?, ?, ?, ?)""",
-							 (word_lower, 
-							  1,  # Default frequency
-							  False,  # Not a sentence starter
-							  word_lower[0],
-							  word_lower[:2] if len(word_lower) >= 2 else None,
-							  word_lower[:3] if len(word_lower) >= 3 else None))
-					imported += c.rowcount
-				except Exception as e:
-					pass
-		
-		self.conn.commit()
-		logging.info(f"Imported {imported} words from SpaCy vocabulary")
+	def _import_wordlist(self):
+		"""Import all words from WordList into database."""
+		# The WordList class already has a populate_database method
+		# that inserts words into the database with the correct schema
+		imported = self.wordlist.populate_database(self.conn)
+		logging.info(f"Imported {imported} words from WordList")
 		return imported
 
 	def get_sentence_starters(self, count: int = 10, partial_word: str = "") -> List[str]:
@@ -176,7 +178,7 @@ class WordPredictor:
 			c.execute(query, (count,))
 			
 		return [row['word'] for row in c.fetchall()]
-
+		
 	def _train_model(self, target_sentences: int = 10000):
 		"""Train the language model using DailyDialog dataset.
 		
@@ -185,27 +187,24 @@ class WordPredictor:
 		"""
 		logging.info(f"Starting model training with {target_sentences} sentences...")
 		
-		# Setup SpaCy
-		self._setup_spacy()
-
-		# Load English dictionary using SpaCy
-		logging.info("Loading English dictionary from SpaCy...")
-		english_words = {word.lower() for word in self.nlp.vocab.strings}
-		logging.info(f"SpaCy dictionary loaded with {len(english_words)} words")
-				# Create database
+		# Create database with necessary tables
 		self.conn = self._create_database()
-		self._import_spacy_vocabulary()
-
-		del self.nlp
-		self.nlp = None
+		
+		# Load word list and populate database
+		self._setup_wordlist()
+		english_words = self.wordlist.load_words()
+		logging.info(f"Word list loaded with {len(english_words):,} words")
+		self._import_wordlist()
+		
+		# Make sure to commit changes
+		self.conn.commit()
 
 		c = self.conn.cursor()
 		
 		# Collect sentences
 		sentences = self._collect_sentences(target_sentences)
 		logging.info(f"Collected {len(sentences)} sentences")
-		
-		# Process sentences
+				# Process sentences
 		word_regex = r"\b[a-zA-Z]+(?:'[a-zA-Z]+)?\b"
 		word_counts = Counter()
 		bigram_counts = Counter()
@@ -218,13 +217,12 @@ class WordPredictor:
 				logging.info(f"Processed {i}/{len(sentences)} sentences")
 			
 			all_words = re.findall(word_regex, sentence.lower())
-			words = [w for w in all_words if w in english_words]
+			words = [w for w in all_words if self.wordlist.is_valid_word(w)]
 			
 			if len(words) < 2:
 				continue
-			
-			# Count starters
-			if words[0] in english_words:
+					# Count starters
+			if words[0]:
 				starter_counts[words[0]] += 1
 			
 			# Count words and n-grams
@@ -330,8 +328,13 @@ class WordPredictor:
 			A tuple containing:
 			- A list of suggested words.
 			- A dictionary with debug information.
-		"""
+		"""		# Check if tables exist first
 		c = self.conn.cursor()
+		c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ngrams'")
+		if not c.fetchone():
+			# Tables don't exist, return empty results
+			return [], {'error': 'Database tables not initialized'}
+			
 		suggestions = Counter()
 		debug_info = {'trigram_hits': 0, 'bigram_hits': 0, 'unigram_hits': 0}
 		

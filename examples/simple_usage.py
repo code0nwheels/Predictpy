@@ -28,15 +28,39 @@ def clear_screen():
     os.system('clear' if os.name == 'posix' else 'cls')
 
 def main():
-    """Interactive word prediction example with keystroke-based predictions."""    # Initialize the engine (will train automatically if needed)
+    """Interactive word prediction example with keystroke-based predictions."""
+    # Initialize the engine (will train automatically if needed)
     print("Initializing Predictpy...")
-    engine = WordPredictionEngine(auto_train=True, target_sentences=5000000)
-    clear_screen()
-    print("Initialization complete.")
+    try:
+        engine = WordPredictionEngine(auto_train=True, target_sentences=10000)
+        
+        # Ensure database initialization by making a simple prediction
+        # This will trigger training if needed
+        try:
+            engine.predict(["the"], "")
+        except Exception as e:
+            print(f"Warning: Initial prediction failed, but continuing: {e}")
+            # Let's continue anyway as the example might still work
+        
+        clear_screen()
+        print("Initialization complete.")
 
-    # Get and print vocab count
-    vocab_count = engine.get_vocab_count()
-    print(f"Vocabulary size: {vocab_count} unique words")
+        # Get and print vocab count
+        try:
+            vocab_count = engine.get_vocab_count()
+            if vocab_count > 0:
+                print(f"Vocabulary size: {vocab_count:,} unique words")
+            else:
+                print("Vocabulary information not available yet.")
+        except Exception as e:
+            print(f"Note: Could not retrieve vocabulary count: {e}")
+    except Exception as e:
+        print(f"Error during initialization: {e}")
+        print("Please run the WordPredictionEngine training script first:")
+        print("python -m predictpy.predictor --train")
+        sys.exit(1)
+    else:
+        print("Vocabulary not yet loaded. Will be available after first prediction.")
     
     # Number of suggestions to show (can be customized)
     num_suggestions = 8  # Change this value to get more or fewer suggestions

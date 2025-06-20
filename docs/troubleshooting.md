@@ -41,32 +41,28 @@ ImportError: No module named 'chromadb'
    pip install sentence-transformers
    ```
 
-### SpaCy Model Download Issues
+### Word List Download Issues
 
-**Problem:** SpaCy model not found
+**Problem:** Word list download fails
 
 ```
-OSError: [E050] Can't find model 'en_core_web_sm'
+Failed to download word list: <error message>
 ```
 
 **Solutions:**
 
-1. **Download SpaCy model manually:**
-   ```python
-   import spacy
-   spacy.cli.download("en_core_web_sm")
-   ```
+1. **Check your internet connection**
 
-2. **Download using command line:**
-   ```bash
-   python -m spacy download en_core_web_sm
-   ```
+2. **Download word lists manually:**
+   Download the appropriate word list file directly from GitHub:
+   
+   - Comprehensive list: https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt
+   - Common words: https://raw.githubusercontent.com/first20hours/google-10000-english/master/google-10000-english.txt
+   
+   Save the file to `~/.predictpy/wordlists/` with appropriate naming.
 
-3. **Set SpaCy data path:**
-   ```python
-   import spacy
-   spacy.util.set_data_path('/custom/spacy_data/path')
-   ```
+3. **Set custom cache directory:**
+   You can modify the cache directory in the WordList class if needed.
 
 ### Dependencies Conflict
 
@@ -87,7 +83,7 @@ OSError: [E050] Can't find model 'en_core_web_sm'
 
 2. **Update conflicting packages:**
    ```bash
-   pip install --upgrade spacy datasets
+   pip install --upgrade datasets
    ```
 
 ---
@@ -504,12 +500,12 @@ def diagnose_predictpy():
         import sentence_transformers
         print(f"Sentence-transformers: {sentence_transformers.__version__}")
     except:
-        print("Sentence-transformers: Not available")
-      try:
-        import spacy
-        print(f"SpaCy version: {spacy.__version__}")
+        print("Sentence-transformers: Not available")      try:
+        from predictpy.wordlist import WordList
+        wordlist = WordList()
+        print(f"WordList available: True")
     except:
-        print("SpaCy: Not available")
+        print("WordList: Not available")
     
     # Database info
     print(f"SQLite version: {sqlite3.sqlite_version}")
@@ -640,7 +636,7 @@ When reporting issues, include:
 | Error Message | Likely Cause | Solution |
 |---------------|--------------|----------|
 | `ImportError: No module named 'chromadb'` | ChromaDB not installed | `pip install chromadb` or use `use_semantic=False` |
-| `OSError: [E050] Can't find model 'en_core_web_sm'` | SpaCy model missing | `python -m spacy download en_core_web_sm` |
+| `urllib.error.URLError` | Failed to download word list | Check internet connection or download files manually |
 | `sqlite3.DatabaseError: database disk image is malformed` | Corrupted database | Delete database file and reinitialize |
 | `MemoryError` | Insufficient memory | Use smaller training size or disable semantic features |
 | `PermissionError` | File access denied | Check file permissions or use different path |

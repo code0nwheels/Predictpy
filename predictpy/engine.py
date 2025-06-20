@@ -176,10 +176,22 @@ class WordPredictionEngine:
         Returns:
             The total number of unique words.
         """
-        cursor = self.predictor.conn.cursor()
-        query = "SELECT COUNT(*) FROM words"
-        result = cursor.execute(query).fetchone()
-        return result[0] if result else 0
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Check if the words table exists
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='words'")
+                if not cursor.fetchone():
+                    # Table doesn't exist, return 0
+                    return 0
+                
+                query = "SELECT COUNT(*) FROM words"
+                result = cursor.execute(query).fetchone()
+                return result[0] if result else 0
+        except sqlite3.Error:
+            # Handle any SQLite errors gracefully
+            return 0
 
     def _get_top_words(self, partial_word: str = "", limit: int = 8) -> List[str]:
         """
